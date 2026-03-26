@@ -1,33 +1,55 @@
 /**
- * LLM provider abstraction — wraps the Anthropic Claude client.
+ * LLM provider abstraction — supports OpenAI and Anthropic.
  *
- * Exposes a lazy singleton so the SDK is only instantiated once per process.
- * Model is configurable via ANTHROPIC_MODEL env var so it can be swapped
- * without a code change.
+ * DEFAULT_LLM_PROVIDER env var controls which backend is used (default: "openai").
+ * Exposes lazy singletons so SDKs are only instantiated once per process.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 
-let _client: Anthropic | null = null;
+export type LLMProvider = "openai" | "anthropic";
 
-export function getAnthropicClient(): Anthropic {
-  if (!_client) {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) throw new Error("ANTHROPIC_API_KEY environment variable is not set");
-    _client = new Anthropic({ apiKey });
-  }
-  return _client;
+export function getProvider(): LLMProvider {
+  const p = (process.env.DEFAULT_LLM_PROVIDER ?? "openai").toLowerCase();
+  if (p === "anthropic" || p === "openai") return p;
+  return "openai";
 }
 
-/**
- * Model ID to use for answer generation.
- * Override with ANTHROPIC_MODEL env var if needed.
- */
+// --- Anthropic ---
+
+let _anthropic: Anthropic | null = null;
+
+export function getAnthropicClient(): Anthropic {
+  if (!_anthropic) {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) throw new Error("ANTHROPIC_API_KEY environment variable is not set");
+    _anthropic = new Anthropic({ apiKey });
+  }
+  return _anthropic;
+}
+
+// --- OpenAI ---
+
+let _openai: OpenAI | null = null;
+
+export function getOpenAIClient(): OpenAI {
+  if (!_openai) {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error("OPENAI_API_KEY environment variable is not set");
+    _openai = new OpenAI({ apiKey });
+  }
+  return _openai;
+}
+
+// --- Model config ---
+
 export const LLM_MODEL: string =
-  process.env.ANTHROPIC_MODEL ?? "claude-3-5-sonnet-20241022";
+  getProvider() === "openai"
+    ? (process.env.OPENAI_MODEL ?? "gpt-4o")
+    : (process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-20250514");
 
 /**
  * Maximum tokens to generate in a single response.
- * 4096 is a reasonable upper bound for code Q&A answers.
  */
 export const LLM_MAX_TOKENS = 4096;
