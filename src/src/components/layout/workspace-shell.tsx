@@ -1,16 +1,17 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { EmptyState } from "@/src/components/workspace/empty-state";
 import { RepoPicker } from "@/src/components/workspace/repo-picker";
 import { IndexProgress } from "@/src/components/workspace/index-progress";
 import { FileTree } from "@/src/components/file-tree/file-tree";
 import { TabBar, type OpenTab } from "@/src/components/code-viewer/tab-bar";
-import { CodeViewer } from "@/src/components/code-viewer/code-viewer";
+import { CodeViewer, type ThreadMarker } from "@/src/components/code-viewer/code-viewer";
 import { ChatPane } from "@/src/components/chat/chat-pane";
-import { BookmarksPanel } from "@/src/components/workspace/bookmarks-panel";
-import type { Bookmark } from "@/src/components/code-viewer/bookmark-button";
+import { SidebarNav } from "@/src/components/layout/sidebar-nav";
+import { ThreadPanel, type ThreadWithComments } from "@/src/components/threads/thread-panel";
+import { ThreadsList } from "@/src/components/threads/threads-list";
 
 interface RepoInfo {
   id: string;
@@ -25,6 +26,7 @@ interface WorkspaceShellProps {
   workspaceId: string;
   workspaceName: string;
   initialRepo: RepoInfo | null;
+  currentUserId?: string;
 }
 
 /**
@@ -44,6 +46,7 @@ export function WorkspaceShell({
   workspaceId,
   workspaceName,
   initialRepo,
+  currentUserId = "",
 }: WorkspaceShellProps) {
   const [repo, setRepo] = useState<RepoInfo | null>(initialRepo);
   const [showRepoPicker, setShowRepoPicker] = useState(false);
@@ -56,9 +59,12 @@ export function WorkspaceShell({
   // Chat pre-fill (consumed by WS5 chat pane)
   const [prefillQuestion, setPrefillQuestion] = useState("");
 
-  // Bookmarks state
-  const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
-  const [showBookmarks, setShowBookmarks] = useState(false);
+  // Thread panel state
+  const [activeThread, setActiveThread] = useState<ThreadWithComments | null>(null);
+  const [showThreadsList, setShowThreadsList] = useState(false);
+  const [threadMarkers, setThreadMarkers] = useState<ThreadMarker[]>([]);
+  const [threadMarkersFile, setThreadMarkersFile] = useState<string | null>(null);
+  const [threadMarkersRepoId, setThreadMarkersRepoId] = useState<string | null>(null);
 
   // ---------------------------------------------------------------------------
   // Repo lifecycle callbacks
@@ -108,7 +114,7 @@ export function WorkspaceShell({
         setOpenTabs((prev) =>
           prev.map((t) =>
             t.path === path
-              ? { ...t, content: data.content, language: data.language ?? language, loading: false, fileId: data.fileId }
+              ? { ...t, content: data.content, language: data.language ?? language, loading: false }
               : t,
           ),
         );
@@ -160,27 +166,101 @@ export function WorkspaceShell({
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Bookmark callbacks
+  // Thread marker loading — fetch thread markers for active file
   // ---------------------------------------------------------------------------
 
-  const handleBookmarkCreated = useCallback((bookmark: Bookmark) => {
-    setBookmarks((prev) => [bookmark, ...prev]);
-  }, []);
-
-  const handleBookmarkRemoved = useCallback((bookmarkId: string) => {
-    setBookmarks((prev) => prev.filter((b) => b.id !== bookmarkId));
-  }, []);
-
-  /**
-   * Navigate to a bookmarked location (called from the bookmarks panel).
-   */
-  const handleBookmarkClick = useCallback(
-    (bookmark: Bookmark) => {
-      openFile(bookmark.filePath, null);
-      setHighlightRange({ start: bookmark.startLine, end: bookmark.endLine });
+  const loadThreadMarkersForFile = useCallback(
+    async (filePath: string, repoId: string) => {
+      try {
+        const res = await fetch(
+          `/api/workspaces/${workspaceId}/repos/${repoId}/threads?file=${encodeURIComponent(filePath)}`,
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        const markers: ThreadMarker[] = (data.threads ?? []).map(
+          (t: {
+            id: string;
+            startLine: number;
+            endLine: number;
+            status: string;
+            title: string;
+            commentCount: number;
+          }) => ({
+            id: t.id,
+            startLine: t.startLine,
+            endLine: t.endLine,
+            status: t.status as "open" | "resolved",
+            title: t.title,
+            commentCount: t.commentCount,
+          }),
+        );
+        setThreadMarkers(markers);
+        setThreadMarkersFile(filePath);
+        setThreadMarkersRepoId(repoId);
+      } catch {
+        // silently ignore
+      }
     },
-    [openFile],
+    [workspaceId],
   );
+
+  // Reload thread markers when active file changes
+  useEffect(() => {
+    if (activeTabPath && repo?.id) {
+      loadThreadMarkersForFile(activeTabPath, repo.id);
+    } else {
+      setThreadMarkers([]);
+    }
+  }, [activeTabPath, repo?.id, loadThreadMarkersForFile]);
+
+  // ---------------------------------------------------------------------------
+  // Thread panel handlers
+  // ---------------------------------------------------------------------------
+
+  const handleThreadMarkerClick = useCallback(
+    async (threadId: string) => {
+      if (!repo) return;
+      try {
+        const res = await fetch(
+          `/api/workspaces/${workspaceId}/repos/${repo.id}/threads/${threadId}`,
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        setActiveThread(data.thread);
+        setShowThreadsList(false);
+      } catch {
+        // silently ignore
+      }
+    },
+    [workspaceId, repo],
+  );
+
+  const handleThreadsListClick = useCallback(
+    async (thread: { id: string; filePath: string }) => {
+      if (!repo) return;
+      // Navigate to file if different
+      await openFile(thread.filePath, null);
+      // Fetch full thread
+      try {
+        const res = await fetch(
+          `/api/workspaces/${workspaceId}/repos/${repo.id}/threads/${thread.id}`,
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        setActiveThread(data.thread);
+        setShowThreadsList(false);
+      } catch {
+        // silently ignore
+      }
+    },
+    [workspaceId, repo, openFile],
+  );
+
+  const handleThreadCreated = useCallback(() => {
+    if (activeTabPath && repo?.id) {
+      loadThreadMarkersForFile(activeTabPath, repo.id);
+    }
+  }, [activeTabPath, repo?.id, loadThreadMarkersForFile]);
 
   // ---------------------------------------------------------------------------
   // Derived state
@@ -213,7 +293,9 @@ export function WorkspaceShell({
   // ---------------------------------------------------------------------------
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-screen">
+      <SidebarNav workspaceId={workspaceId} />
+      <div className="flex flex-1 flex-col min-w-0">
       {/* Top bar */}
       <header className="flex h-12 shrink-0 items-center justify-between border-b px-4">
         <div className="flex items-center gap-2 min-w-0">
@@ -236,73 +318,32 @@ export function WorkspaceShell({
             </>
           )}
         </div>
-        {/* Bookmarks toggle button */}
-        {isReady && repo && (
-          <button
-            onClick={() => setShowBookmarks((v) => !v)}
-            title={showBookmarks ? "Hide bookmarks" : "Show bookmarks"}
-            className={`flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors ${
-              showBookmarks
-                ? "bg-[var(--accent)] text-[var(--foreground)]"
-                : "text-[var(--muted-foreground)] hover:bg-[var(--accent)] hover:text-[var(--foreground)]"
-            }`}
-          >
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill={showBookmarks ? "currentColor" : "none"}
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />
-            </svg>
-            Bookmarks
-            {bookmarks.length > 0 && (
-              <span className="rounded-full bg-blue-600 px-1.5 py-0.5 text-[9px] text-white">
-                {bookmarks.length}
-              </span>
-            )}
-          </button>
-        )}
       </header>
 
       {/* Three-panel layout */}
       <PanelGroup direction="horizontal" className="flex-1 overflow-hidden">
-        {/* ── Left panel: File tree / Bookmarks ── */}
+        {/* ── Left panel: File tree ── */}
         <Panel defaultSize={20} minSize={15} maxSize={35}>
           <div className="flex h-full flex-col border-r">
-            {showBookmarks && isReady && repo ? (
-              <BookmarksPanel
+            <div className="flex h-10 shrink-0 items-center border-b px-3">
+              <span className="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wider">
+                Files
+              </span>
+            </div>
+
+            {isReady && repo ? (
+              <FileTree
                 workspaceId={workspaceId}
                 repoId={repo.id}
-                onBookmarkClick={handleBookmarkClick}
+                selectedPath={activeTabPath}
+                onSelectFile={openFile}
               />
             ) : (
-              <>
-                <div className="flex h-10 shrink-0 items-center border-b px-3">
-                  <span className="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wider">
-                    Files
-                  </span>
-                </div>
-
-                {isReady && repo ? (
-                  <FileTree
-                    workspaceId={workspaceId}
-                    repoId={repo.id}
-                    selectedPath={activeTabPath}
-                    onSelectFile={openFile}
-                  />
-                ) : (
-                  <div className="flex flex-1 items-center justify-center p-4">
-                    <p className="text-center text-xs text-[var(--muted-foreground)]">
-                      {repo ? "Indexing in progress…" : "Connect a repository to browse files"}
-                    </p>
-                  </div>
-                )}
-              </>
+              <div className="flex flex-1 items-center justify-center p-4">
+                <p className="text-center text-xs text-[var(--muted-foreground)]">
+                  {repo ? "Indexing in progress…" : "Connect a repository to browse files"}
+                </p>
+              </div>
             )}
           </div>
         </Panel>
@@ -395,10 +436,14 @@ export function WorkspaceShell({
                     onAskAboutFile={handleAskAboutFile}
                     workspaceId={workspaceId}
                     repoId={repo?.id}
-                    fileId={activeTab.fileId}
-                    bookmarks={bookmarks}
-                    onBookmarkCreated={handleBookmarkCreated}
-                    onBookmarkRemoved={handleBookmarkRemoved}
+                    threadMarkers={
+                      threadMarkersFile === activeTab.path &&
+                      threadMarkersRepoId === repo?.id
+                        ? threadMarkers
+                        : []
+                    }
+                    onThreadMarkerClick={handleThreadMarkerClick}
+                    onThreadCreated={handleThreadCreated}
                   />
                 ) : null}
               </div>
@@ -411,10 +456,29 @@ export function WorkspaceShell({
         {/* ── Right panel: Chat ── */}
         <Panel defaultSize={30} minSize={20} maxSize={45}>
           <div className="flex h-full flex-col border-l">
-            <div className="flex h-10 shrink-0 items-center border-b px-3">
+            <div className="flex h-10 shrink-0 items-center justify-between border-b px-3">
               <span className="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wider">
                 Chat
               </span>
+              {isReady && repo && (
+                <button
+                  onClick={() => {
+                    setShowThreadsList((v) => !v);
+                    setActiveThread(null);
+                  }}
+                  title="View all discussions"
+                  className={`flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition-colors ${
+                    showThreadsList
+                      ? "bg-indigo-600 text-white"
+                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--accent)]"
+                  }`}
+                >
+                  <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+                    <path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.458 1.458 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h4.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z" />
+                  </svg>
+                  Discussions
+                </button>
+              )}
             </div>
 
             <ChatPane
@@ -444,6 +508,89 @@ export function WorkspaceShell({
           onConnected={handleConnected}
         />
       )}
+
+      {/* Thread panel slide-over (from right) */}
+      {(activeThread || showThreadsList) && (
+        <>
+          {/* Backdrop — clicking closes the panel */}
+          <div
+            className="fixed inset-0 z-30 bg-black/20"
+            onClick={() => {
+              setActiveThread(null);
+              setShowThreadsList(false);
+            }}
+            aria-hidden
+          />
+
+          {/* Slide-over panel */}
+          <div className="fixed right-0 top-0 z-40 flex h-full w-80 flex-col border-l bg-[var(--background)] shadow-2xl">
+            {/* Panel header */}
+            <div className="flex h-12 shrink-0 items-center justify-between border-b px-4">
+              <span className="text-sm font-semibold">
+                {activeThread ? "Discussion" : "Discussions"}
+              </span>
+              <div className="flex items-center gap-2">
+                {activeThread && (
+                  <button
+                    onClick={() => {
+                      setActiveThread(null);
+                      setShowThreadsList(true);
+                    }}
+                    className="text-[10px] text-[var(--muted-foreground)] hover:text-[var(--foreground)] underline"
+                  >
+                    All discussions
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setActiveThread(null);
+                    setShowThreadsList(false);
+                  }}
+                  className="rounded p-1 text-[var(--muted-foreground)] hover:text-foreground hover:bg-[var(--accent)] transition-colors"
+                  aria-label="Close panel"
+                >
+                  <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                    <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Panel content */}
+            <div className="flex-1 overflow-hidden">
+              {activeThread && repo ? (
+                <ThreadPanel
+                  thread={activeThread}
+                  workspaceId={workspaceId}
+                  repoId={repo.id}
+                  currentUserId={currentUserId}
+                  onClose={() => setActiveThread(null)}
+                  onCommentAdded={(updated) => setActiveThread(updated)}
+                  onStatusChanged={(updated) => {
+                    setActiveThread(updated);
+                    if (activeTabPath && repo?.id) {
+                      loadThreadMarkersForFile(activeTabPath, repo.id);
+                    }
+                  }}
+                  onDeleted={() => {
+                    setActiveThread(null);
+                    if (activeTabPath && repo?.id) {
+                      loadThreadMarkersForFile(activeTabPath, repo.id);
+                    }
+                  }}
+                />
+              ) : repo ? (
+                <ThreadsList
+                  workspaceId={workspaceId}
+                  repoId={repo.id}
+                  onThreadClick={handleThreadsListClick}
+                />
+              ) : null}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
     </div>
   );
 }

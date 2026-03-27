@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import type { BundledLanguage, Highlighter, ThemedToken } from "shiki";
 import { AskAboutFile } from "./ask-about-file";
-import { BookmarkButton, type Bookmark } from "./bookmark-button";
+import { NewThreadDialog } from "@/src/components/threads/new-thread-dialog";
 
 // ---------------------------------------------------------------------------
 // Shiki singleton — lazy-initialized once per browser session
@@ -69,19 +69,31 @@ function mapLang(language: string | null): BundledLanguage | null {
 // Component
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Thread marker types (passed in from workspace shell)
+// ---------------------------------------------------------------------------
+
+export interface ThreadMarker {
+  id: string;
+  startLine: number;
+  endLine: number;
+  status: "open" | "resolved";
+  title: string;
+  commentCount: number;
+}
+
 interface CodeViewerProps {
   filePath: string;
   content: string;
   language: string | null;
   highlightRange?: { start: number; end: number } | null;
   onAskAboutFile: (filePath: string) => void;
-  // Bookmark props (optional — only wired when repo context is available)
+  // Thread integration
   workspaceId?: string;
   repoId?: string;
-  fileId?: string;
-  bookmarks?: Bookmark[];
-  onBookmarkCreated?: (bookmark: Bookmark) => void;
-  onBookmarkRemoved?: (bookmarkId: string) => void;
+  threadMarkers?: ThreadMarker[];
+  onThreadMarkerClick?: (threadId: string) => void;
+  onThreadCreated?: () => void;
 }
 
 interface LineData {
@@ -97,10 +109,9 @@ export function CodeViewer({
   onAskAboutFile,
   workspaceId,
   repoId,
-  fileId,
-  bookmarks = [],
-  onBookmarkCreated,
-  onBookmarkRemoved,
+  threadMarkers = [],
+  onThreadMarkerClick,
+  onThreadCreated,
 }: CodeViewerProps) {
   const [lines, setLines] = useState<LineData[]>([]);
   const [bg, setBg] = useState<string>("transparent");
@@ -108,18 +119,12 @@ export function CodeViewer({
   const [shikiError, setShikiError] = useState(false);
   const highlightRef = useRef<HTMLDivElement | null>(null);
 
-  // Bookmark state: current visible range for bookmarking
-  // Uses highlightRange if set, otherwise defaults to full file
-  const bookmarkStart = highlightRange?.start ?? 1;
-  const bookmarkEnd = highlightRange?.end ?? lines.length;
-
-  // Find if there's an existing bookmark covering the current range
-  const existingBookmark = bookmarks.find(
-    (b) =>
-      b.filePath === filePath &&
-      b.startLine === bookmarkStart &&
-      b.endLine === bookmarkEnd,
-  );
+  // Thread discussion state
+  const [hoveredLine, setHoveredLine] = useState<number | null>(null);
+  const [newThreadDialog, setNewThreadDialog] = useState<{
+    startLine: number;
+    endLine: number;
+  } | null>(null);
 
   // Highlight code with Shiki
   useEffect(() => {
@@ -180,6 +185,25 @@ export function CodeViewer({
 
   const filename = filePath.split("/").pop() ?? filePath;
 
+  // Build a map of lineNumber → thread markers covering that line
+  const lineToMarkers = useCallback((): Map<number, ThreadMarker[]> => {
+    const map = new Map<number, ThreadMarker[]>();
+    for (const marker of threadMarkers) {
+      for (let ln = marker.startLine; ln <= marker.endLine; ln++) {
+        const existing = map.get(ln) ?? [];
+        existing.push(marker);
+        map.set(ln, existing);
+      }
+    }
+    return map;
+  }, [threadMarkers]);
+
+  const markerMap = lineToMarkers();
+
+  function handleStartDiscussion(lineNumber: number) {
+    setNewThreadDialog({ startLine: lineNumber, endLine: lineNumber });
+  }
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* File path header */}
@@ -187,20 +211,7 @@ export function CodeViewer({
         <span className="truncate font-mono text-xs text-[var(--muted-foreground)]" title={filePath}>
           {filePath}
         </span>
-        <div className="ml-2 flex shrink-0 items-center gap-1">
-          {workspaceId && repoId && fileId && onBookmarkCreated && onBookmarkRemoved && (
-            <BookmarkButton
-              workspaceId={workspaceId}
-              repoId={repoId}
-              fileId={fileId}
-              filePath={filePath}
-              startLine={bookmarkStart}
-              endLine={bookmarkEnd}
-              existingBookmark={existingBookmark}
-              onBookmarkCreated={onBookmarkCreated}
-              onBookmarkRemoved={onBookmarkRemoved}
-            />
-          )}
+        <div className="ml-2 shrink-0">
           <AskAboutFile filePath={filePath} onAsk={onAskAboutFile} />
         </div>
       </div>
@@ -224,48 +235,62 @@ export function CodeViewer({
                   line.lineNumber >= highlightRange.start &&
                   line.lineNumber <= highlightRange.end;
 
-                // Find bookmarks that cover this line
-                const lineBookmarks = bookmarks.filter(
-                  (b) =>
-                    b.filePath === filePath &&
-                    line.lineNumber >= b.startLine &&
-                    line.lineNumber <= b.endLine,
-                );
-                const bookmarkColor =
-                  lineBookmarks.length > 0
-                    ? lineBookmarks[0].color ?? "blue"
-                    : null;
-
-                const colorHexMap: Record<string, string> = {
-                  blue: "#3b82f6",
-                  green: "#22c55e",
-                  yellow: "#eab308",
-                  red: "#ef4444",
-                  purple: "#a855f7",
-                };
+                const markersOnLine = markerMap.get(line.lineNumber) ?? [];
+                const hasOpenMarker = markersOnLine.some((m) => m.status === "open");
+                const hasResolvedMarker =
+                  !hasOpenMarker && markersOnLine.some((m) => m.status === "resolved");
+                const firstMarker = markersOnLine[0];
+                const isHovered = hoveredLine === line.lineNumber;
 
                 return (
                   <tr
                     key={line.lineNumber}
                     data-line={line.lineNumber}
                     className={isHighlighted ? "bg-yellow-400/15" : undefined}
+                    onMouseEnter={() => setHoveredLine(line.lineNumber)}
+                    onMouseLeave={() => setHoveredLine(null)}
                   >
-                    {/* Bookmark gutter marker */}
-                    <td className="w-2 select-none pl-1 align-top" style={{ userSelect: "none" }}>
-                      {bookmarkColor && (
-                        <span
-                          className="mt-1 block h-2 w-1.5 rounded-sm"
-                          style={{ backgroundColor: colorHexMap[bookmarkColor] ?? "#3b82f6" }}
-                          title={lineBookmarks.map((b) => b.title).join(", ")}
-                        />
-                      )}
-                    </td>
-                    {/* Line number */}
+                    {/* Gutter: thread markers + line number + discussion button */}
                     <td
-                      className="select-none border-r border-white/10 pr-4 pl-2 text-right text-[var(--muted-foreground)] opacity-50 align-top w-12"
+                      className="select-none border-r border-white/10 pr-1 pl-2 text-right text-[var(--muted-foreground)] opacity-50 align-top w-20 relative"
                       style={{ userSelect: "none" }}
                     >
-                      {line.lineNumber}
+                      <div className="flex items-center justify-end gap-1">
+                        {/* Thread marker dot */}
+                        {markersOnLine.length > 0 && (
+                          <button
+                            onClick={() =>
+                              firstMarker && onThreadMarkerClick?.(firstMarker.id)
+                            }
+                            title={firstMarker?.title ?? "View discussion"}
+                            className={`h-2 w-2 rounded-full shrink-0 transition-transform hover:scale-125 ${
+                              hasOpenMarker
+                                ? "bg-amber-400"
+                                : hasResolvedMarker
+                                  ? "bg-green-500 opacity-60"
+                                  : "bg-gray-500"
+                            }`}
+                            aria-label="Open thread"
+                          />
+                        )}
+
+                        {/* Start discussion button on hover (only if threads enabled) */}
+                        {workspaceId && repoId && isHovered && markersOnLine.length === 0 && (
+                          <button
+                            onClick={() => handleStartDiscussion(line.lineNumber)}
+                            title="Start a discussion on this line"
+                            className="h-3.5 w-3.5 rounded-sm bg-indigo-500/80 text-white flex items-center justify-center opacity-80 hover:opacity-100 transition-opacity shrink-0"
+                            aria-label="Start discussion"
+                          >
+                            <svg viewBox="0 0 12 12" width="8" height="8" fill="currentColor">
+                              <path d="M6 0C2.69 0 0 2.42 0 5.4c0 1.78.9 3.36 2.32 4.37L2 12l2.38-1.19A6.36 6.36 0 0 0 6 10.8c3.31 0 6-2.42 6-5.4S9.31 0 6 0Zm.6 7.2H5.4V6h1.2v1.2Zm0-2.4H5.4V2.4h1.2v2.4Z" />
+                            </svg>
+                          </button>
+                        )}
+
+                        {/* Line number */}
+                        <span className="text-xs">{line.lineNumber}</span>
+                      </div>
                     </td>
                     {/* Code tokens */}
                     <td className="pl-4 pr-4 whitespace-pre">
@@ -292,8 +317,31 @@ export function CodeViewer({
           {language && <span>{language}</span>}
           <span>{lines.length} lines</span>
           {shikiError && <span className="text-amber-500">plain text</span>}
+          {threadMarkers.length > 0 && (
+            <span className="text-amber-400">
+              {threadMarkers.filter((m) => m.status === "open").length} discussion
+              {threadMarkers.filter((m) => m.status === "open").length !== 1 ? "s" : ""}
+            </span>
+          )}
         </div>
       </div>
+
+      {/* New Thread Dialog */}
+      {newThreadDialog && workspaceId && repoId && (
+        <NewThreadDialog
+          workspaceId={workspaceId}
+          repoId={repoId}
+          filePath={filePath}
+          startLine={newThreadDialog.startLine}
+          endLine={newThreadDialog.endLine}
+          onClose={() => setNewThreadDialog(null)}
+          onCreated={(thread) => {
+            setNewThreadDialog(null);
+            onThreadCreated?.();
+            onThreadMarkerClick?.((thread as { id: string }).id);
+          }}
+        />
+      )}
     </div>
   );
 }
