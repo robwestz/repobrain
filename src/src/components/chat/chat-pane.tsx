@@ -65,6 +65,7 @@ export function ChatPane({
   prefillQuestion,
   onPrefillUsed,
   onCitationNavigate,
+  activeFilePath,
 }: ChatPaneProps) {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<LocalMessage[]>([]);
@@ -146,7 +147,10 @@ export function ChatPane({
         const res = await fetch(`/api/conversations/${convId}/messages`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: question }),
+          body: JSON.stringify({
+            content: question,
+            ...(activeFilePath ? { filePath: activeFilePath } : {}),
+          }),
           signal: controller.signal,
         });
 
@@ -225,7 +229,7 @@ export function ChatPane({
         );
       }
     },
-    [isStreaming, ensureConversation],
+    [isStreaming, ensureConversation, activeFilePath],
   );
 
   // ---------------------------------------------------------------------------

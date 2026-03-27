@@ -1,10 +1,13 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 export interface BreadcrumbsProps {
   workspaceId: string;
   workspaceName: string;
   repoOwner?: string;
   repoName?: string;
+  /** When set (e.g. multi-repo switcher), replaces static owner/name crumb */
+  repoSegment?: ReactNode;
   activeFilePath?: string;
 }
 
@@ -34,6 +37,7 @@ export function Breadcrumbs({
   workspaceName,
   repoOwner,
   repoName,
+  repoSegment,
   activeFilePath,
 }: BreadcrumbsProps) {
   const repoLabel =
@@ -42,6 +46,7 @@ export function Breadcrumbs({
     activeFilePath && activeFilePath.length > 60
       ? truncateMiddle(activeFilePath, 60)
       : activeFilePath;
+  const showRepo = repoSegment ?? repoLabel;
 
   return (
     <nav
@@ -55,15 +60,19 @@ export function Breadcrumbs({
       <Link href={`/workspace/${workspaceId}`} className={linkClass}>
         <span className="truncate">{workspaceName}</span>
       </Link>
-      {repoLabel && (
+      {showRepo && (
         <>
           <Sep />
-          <span
-            className={staticClass}
-            aria-current={pathDisplay ? undefined : "page"}
-          >
-            {repoLabel}
-          </span>
+          {repoSegment ? (
+            <span className="flex min-w-0 shrink items-center">{repoSegment}</span>
+          ) : (
+            <span
+              className={staticClass}
+              aria-current={pathDisplay ? undefined : "page"}
+            >
+              {repoLabel}
+            </span>
+          )}
         </>
       )}
       {pathDisplay && (

@@ -9,6 +9,7 @@ import { FileTree } from "@/src/components/file-tree/file-tree";
 import { TabBar, type OpenTab } from "@/src/components/code-viewer/tab-bar";
 import { CodeViewer } from "@/src/components/code-viewer/code-viewer";
 import { ChatPane } from "@/src/components/chat/chat-pane";
+import { Breadcrumbs } from "@/src/components/layout/breadcrumbs";
 import { SidebarNav } from "@/src/components/layout/sidebar-nav";
 import { RepoSwitcher } from "@/src/components/workspace/repo-switcher";
 
@@ -218,30 +219,24 @@ export function WorkspaceShell({
       <SidebarNav workspaceId={workspaceId} />
       <div className="flex flex-1 flex-col min-w-0">
       {/* Top bar */}
-      <header className="flex h-12 shrink-0 items-center justify-between border-b px-4">
-        <div className="flex items-center gap-2 min-w-0">
-          <a
-            href="/dashboard"
-            className="shrink-0 font-semibold text-sm hover:opacity-70 transition-opacity"
-          >
-            RepoBrain
-          </a>
-          <span className="shrink-0 text-[var(--muted-foreground)]">/</span>
-          <span className="truncate text-sm text-[var(--muted-foreground)]">
-            {workspaceName}
-          </span>
-          {repos.length > 0 && (
-            <>
-              <span className="shrink-0 text-[var(--muted-foreground)]">/</span>
+      <header className="flex h-12 shrink-0 items-center justify-between gap-4 border-b px-4">
+        <Breadcrumbs
+          workspaceId={workspaceId}
+          workspaceName={workspaceName}
+          repoOwner={repos.length <= 1 ? repo?.owner : undefined}
+          repoName={repos.length <= 1 ? repo?.name : undefined}
+          repoSegment={
+            repos.length > 1 ? (
               <RepoSwitcher
                 repos={repos}
                 activeRepoId={repo?.id ?? null}
                 onSwitch={handleSwitchRepo}
                 onAddRepo={() => setShowRepoPicker(true)}
               />
-            </>
-          )}
-        </div>
+            ) : undefined
+          }
+          activeFilePath={activeTabPath ?? undefined}
+        />
         {repos.length >= 2 && (
           <a
             href={`/workspace/${workspaceId}/cross-repo`}

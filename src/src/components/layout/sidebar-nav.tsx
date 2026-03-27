@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import Link from "next/link";
+// Use <a> instead of <Link> because feature pages are separate server components
 import { useState } from "react";
 
 interface NavItem {
@@ -52,7 +52,7 @@ export function SidebarNav({ workspaceId }: { workspaceId: string }) {
         {items.map((item) => {
           const active = isActive(item.href);
           return (
-            <Link
+            <a
               key={item.id}
               href={item.href}
               title={item.label}
@@ -64,7 +64,7 @@ export function SidebarNav({ workspaceId }: { workspaceId: string }) {
             >
               <span className="shrink-0 w-5 h-5 flex items-center justify-center">{item.icon}</span>
               {expanded && <span className="truncate">{item.label}</span>}
-            </Link>
+            </a>
           );
         })}
       </div>

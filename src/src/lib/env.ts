@@ -27,6 +27,16 @@ export function env(): Env {
       throw new Error("Invalid environment variables");
     }
     _env = parsed.data;
+
+    // Production-specific safety checks
+    if (process.env.NODE_ENV === "production") {
+      if (_env.SESSION_SECRET === "this-is-a-secret-that-must-be-at-least-32-chars") {
+        throw new Error("SESSION_SECRET is using the insecure default — set a real secret in production");
+      }
+      if (_env.DATABASE_URL.includes("localhost")) {
+        throw new Error("DATABASE_URL points to localhost in production");
+      }
+    }
   }
   return _env;
 }
