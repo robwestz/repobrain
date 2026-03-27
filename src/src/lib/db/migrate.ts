@@ -1,10 +1,14 @@
+import "dotenv/config";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Pool } from "pg";
 
 async function main() {
+  const connString = process.env.DATABASE_URL || "postgresql://repobrain:repobrain@localhost:5432/repobrain";
+  const isLocal = connString.includes("localhost");
   const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || "postgresql://repobrain:repobrain@localhost:5432/repobrain",
+    connectionString: connString,
+    ssl: isLocal ? false : { rejectUnauthorized: false },
   });
 
   // Ensure pgvector extension exists

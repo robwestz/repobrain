@@ -8,18 +8,21 @@
  *   - summary worker (WS7 — started once implemented)
  */
 
+import "dotenv/config";
 import { createCloneWorker } from "./clone.worker";
 import { createIngestWorker } from "./ingest.worker";
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 
-// Parse Redis URL into host/port for BullMQ connection options
-function parseRedisUrl(url: string): { host: string; port: number } {
+// Parse Redis URL into BullMQ connection options (including password for Redis Cloud)
+function parseRedisUrl(url: string): { host: string; port: number; password?: string; username?: string } {
   try {
     const parsed = new URL(url);
     return {
       host: parsed.hostname || "localhost",
       port: parseInt(parsed.port || "6379", 10),
+      ...(parsed.password ? { password: decodeURIComponent(parsed.password) } : {}),
+      ...(parsed.username && parsed.username !== "default" ? { username: parsed.username } : {}),
     };
   } catch {
     return { host: "localhost", port: 6379 };

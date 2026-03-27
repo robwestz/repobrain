@@ -65,24 +65,25 @@ export function IndexProgress({
       return;
     }
 
+    let cancelled = false;
     const interval = setInterval(async () => {
+      if (cancelled) return;
       try {
         const res = await fetch(
           `/api/workspaces/${workspaceId}/repos/${repoId}/index-status`,
           { cache: "no-store" },
         );
-        if (res.ok) {
+        if (res.ok && !cancelled) {
           const data: StatusResponse = await res.json();
           setStatus(data);
-          setPollCount((c) => c + 1);
         }
       } catch {
         // Silently ignore transient network errors during polling
       }
-    }, 2000);
+    }, 3000);
 
-    return () => clearInterval(interval);
-  }, [status.repoStatus, workspaceId, repoId, onReady, pollCount]);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [status.repoStatus, workspaceId, repoId, onReady]);
 
   const progress = status.job?.progress;
   const filesTotal = progress?.files_total ?? 0;
