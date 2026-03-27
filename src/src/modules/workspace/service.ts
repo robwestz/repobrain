@@ -11,6 +11,7 @@ import {
   findWorkspacesByUser,
   insertWorkspace,
   findRepoConnectionByWorkspace,
+  findRepoConnectionsByWorkspace,
   findRepoConnectionById,
   countRepoConnectionsForWorkspace,
   insertRepoConnection,
@@ -60,13 +61,21 @@ export async function getWorkspaceWithRepo(workspaceId: string, userId: string) 
   return { ...workspace, repoConnection: repoConnection ?? null };
 }
 
+export async function getWorkspaceWithRepos(workspaceId: string, userId: string) {
+  const workspace = await findWorkspaceByIdAndUser(workspaceId, userId);
+  if (!workspace) return null;
+
+  const repoConnections = await findRepoConnectionsByWorkspace(workspaceId);
+  return { ...workspace, repoConnections };
+}
+
 // ---------------------------------------------------------------------------
 // Repo connection operations
 // ---------------------------------------------------------------------------
 
 /**
  * Connect a GitHub repository to a workspace.
- * Enforces v1 constraint: max 1 repo per workspace (§10 invariant #7).
+ * Allows up to 10 repos per workspace (multi-repo cross-repo intelligence).
  * Creates a RepoConnection record and enqueues a clone job.
  */
 export async function connectRepo(
@@ -81,11 +90,11 @@ export async function connectRepo(
     throw new Error("Workspace not found");
   }
 
-  // Enforce max-1-repo-per-workspace constraint
+  // Enforce max-10-repos-per-workspace constraint
   const existingCount = await countRepoConnectionsForWorkspace(workspaceId);
-  if (existingCount > 0) {
+  if (existingCount >= 10) {
     throw new Error(
-      "This workspace already has a connected repository. Disconnect it before connecting a new one.",
+      "This workspace has reached the maximum of 10 connected repositories.",
     );
   }
 

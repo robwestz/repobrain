@@ -468,3 +468,4 @@ export const branchActionsRelations = relations(branchActions, ({ one }) => ({
 export * from "./schema-bookmarks";
 export * from "./schema-threads";    // Job 06
 export * from "./schema-onboarding"; // Job 09
+export * from "./schema-cross-repo"; // Job 15

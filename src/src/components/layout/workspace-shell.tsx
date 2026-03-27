@@ -1,17 +1,16 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { EmptyState } from "@/src/components/workspace/empty-state";
 import { RepoPicker } from "@/src/components/workspace/repo-picker";
 import { IndexProgress } from "@/src/components/workspace/index-progress";
 import { FileTree } from "@/src/components/file-tree/file-tree";
 import { TabBar, type OpenTab } from "@/src/components/code-viewer/tab-bar";
-import { CodeViewer, type ThreadMarker } from "@/src/components/code-viewer/code-viewer";
+import { CodeViewer } from "@/src/components/code-viewer/code-viewer";
 import { ChatPane } from "@/src/components/chat/chat-pane";
 import { SidebarNav } from "@/src/components/layout/sidebar-nav";
-import { ThreadPanel, type ThreadWithComments } from "@/src/components/threads/thread-panel";
-import { ThreadsList } from "@/src/components/threads/threads-list";
+import { RepoSwitcher } from "@/src/components/workspace/repo-switcher";
 
 interface RepoInfo {
   id: string;
@@ -26,7 +25,8 @@ interface WorkspaceShellProps {
   workspaceId: string;
   workspaceName: string;
   initialRepo: RepoInfo | null;
-  currentUserId?: string;
+  /** All repos connected to this workspace (for multi-repo switcher) */
+  initialRepos?: RepoInfo[];
 }
 
 /**
@@ -46,9 +46,10 @@ export function WorkspaceShell({
   workspaceId,
   workspaceName,
   initialRepo,
-  currentUserId = "",
+  initialRepos,
 }: WorkspaceShellProps) {
   const [repo, setRepo] = useState<RepoInfo | null>(initialRepo);
+  const [repos, setRepos] = useState<RepoInfo[]>(initialRepos ?? (initialRepo ? [initialRepo] : []));
   const [showRepoPicker, setShowRepoPicker] = useState(false);
 
   // Tab state
@@ -59,13 +60,6 @@ export function WorkspaceShell({
   // Chat pre-fill (consumed by WS5 chat pane)
   const [prefillQuestion, setPrefillQuestion] = useState("");
 
-  // Thread panel state
-  const [activeThread, setActiveThread] = useState<ThreadWithComments | null>(null);
-  const [showThreadsList, setShowThreadsList] = useState(false);
-  const [threadMarkers, setThreadMarkers] = useState<ThreadMarker[]>([]);
-  const [threadMarkersFile, setThreadMarkersFile] = useState<string | null>(null);
-  const [threadMarkersRepoId, setThreadMarkersRepoId] = useState<string | null>(null);
-
   // ---------------------------------------------------------------------------
   // Repo lifecycle callbacks
   // ---------------------------------------------------------------------------
@@ -73,13 +67,36 @@ export function WorkspaceShell({
   const handleConnected = useCallback(
     (conn: { id: string; owner: string; name: string; status: string }) => {
       setShowRepoPicker(false);
-      setRepo({ id: conn.id, owner: conn.owner, name: conn.name, status: conn.status, errorMessage: null, indexedCommitSha: null });
+      const newRepo: RepoInfo = { id: conn.id, owner: conn.owner, name: conn.name, status: conn.status, errorMessage: null, indexedCommitSha: null };
+      setRepo(newRepo);
+      setRepos((prev) => {
+        const exists = prev.some((r) => r.id === conn.id);
+        return exists ? prev : [...prev, newRepo];
+      });
     },
     [],
   );
 
+  const handleSwitchRepo = useCallback((repoId: string) => {
+    const target = repos.find((r) => r.id === repoId);
+    if (target) {
+      setRepo(target);
+      // Close any open tabs when switching repos (they belong to the old repo)
+      setOpenTabs([]);
+      setActiveTabPath(null);
+      setHighlightRange(null);
+    }
+  }, [repos]);
+
   const handleReady = useCallback(() => {
-    setRepo((prev) => (prev ? { ...prev, status: "ready" } : prev));
+    setRepo((prev) => {
+      if (!prev) return prev;
+      const updated = { ...prev, status: "ready" };
+      setRepos((prevRepos) =>
+        prevRepos.map((r) => (r.id === prev.id ? updated : r)),
+      );
+      return updated;
+    });
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -166,103 +183,6 @@ export function WorkspaceShell({
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Thread marker loading — fetch thread markers for active file
-  // ---------------------------------------------------------------------------
-
-  const loadThreadMarkersForFile = useCallback(
-    async (filePath: string, repoId: string) => {
-      try {
-        const res = await fetch(
-          `/api/workspaces/${workspaceId}/repos/${repoId}/threads?file=${encodeURIComponent(filePath)}`,
-        );
-        if (!res.ok) return;
-        const data = await res.json();
-        const markers: ThreadMarker[] = (data.threads ?? []).map(
-          (t: {
-            id: string;
-            startLine: number;
-            endLine: number;
-            status: string;
-            title: string;
-            commentCount: number;
-          }) => ({
-            id: t.id,
-            startLine: t.startLine,
-            endLine: t.endLine,
-            status: t.status as "open" | "resolved",
-            title: t.title,
-            commentCount: t.commentCount,
-          }),
-        );
-        setThreadMarkers(markers);
-        setThreadMarkersFile(filePath);
-        setThreadMarkersRepoId(repoId);
-      } catch {
-        // silently ignore
-      }
-    },
-    [workspaceId],
-  );
-
-  // Reload thread markers when active file changes
-  useEffect(() => {
-    if (activeTabPath && repo?.id) {
-      loadThreadMarkersForFile(activeTabPath, repo.id);
-    } else {
-      setThreadMarkers([]);
-    }
-  }, [activeTabPath, repo?.id, loadThreadMarkersForFile]);
-
-  // ---------------------------------------------------------------------------
-  // Thread panel handlers
-  // ---------------------------------------------------------------------------
-
-  const handleThreadMarkerClick = useCallback(
-    async (threadId: string) => {
-      if (!repo) return;
-      try {
-        const res = await fetch(
-          `/api/workspaces/${workspaceId}/repos/${repo.id}/threads/${threadId}`,
-        );
-        if (!res.ok) return;
-        const data = await res.json();
-        setActiveThread(data.thread);
-        setShowThreadsList(false);
-      } catch {
-        // silently ignore
-      }
-    },
-    [workspaceId, repo],
-  );
-
-  const handleThreadsListClick = useCallback(
-    async (thread: { id: string; filePath: string }) => {
-      if (!repo) return;
-      // Navigate to file if different
-      await openFile(thread.filePath, null);
-      // Fetch full thread
-      try {
-        const res = await fetch(
-          `/api/workspaces/${workspaceId}/repos/${repo.id}/threads/${thread.id}`,
-        );
-        if (!res.ok) return;
-        const data = await res.json();
-        setActiveThread(data.thread);
-        setShowThreadsList(false);
-      } catch {
-        // silently ignore
-      }
-    },
-    [workspaceId, repo, openFile],
-  );
-
-  const handleThreadCreated = useCallback(() => {
-    if (activeTabPath && repo?.id) {
-      loadThreadMarkersForFile(activeTabPath, repo.id);
-    }
-  }, [activeTabPath, repo?.id, loadThreadMarkersForFile]);
-
-  // ---------------------------------------------------------------------------
   // Derived state
   // ---------------------------------------------------------------------------
 
@@ -276,9 +196,10 @@ export function WorkspaceShell({
 
   const activeTab = openTabs.find((t) => t.path === activeTabPath) ?? null;
 
+  const repoCountLabel = repos.length > 1 ? ` (+${repos.length - 1} more)` : "";
   const statusLabel = repo
     ? repo.status === "ready"
-      ? `${repo.owner}/${repo.name}`
+      ? `${repo.owner}/${repo.name}${repoCountLabel}`
       : repo.status === "cloning"
         ? `Cloning ${repo.owner}/${repo.name}…`
         : repo.status === "indexing"
@@ -309,15 +230,29 @@ export function WorkspaceShell({
           <span className="truncate text-sm text-[var(--muted-foreground)]">
             {workspaceName}
           </span>
-          {repo && (
+          {repos.length > 0 && (
             <>
               <span className="shrink-0 text-[var(--muted-foreground)]">/</span>
-              <span className="truncate text-sm text-[var(--muted-foreground)]">
-                {repo.owner}/{repo.name}
-              </span>
+              <RepoSwitcher
+                repos={repos}
+                activeRepoId={repo?.id ?? null}
+                onSwitch={handleSwitchRepo}
+                onAddRepo={() => setShowRepoPicker(true)}
+              />
             </>
           )}
         </div>
+        {repos.length >= 2 && (
+          <a
+            href={`/workspace/${workspaceId}/cross-repo`}
+            className="flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs text-[var(--muted-foreground)] transition-colors hover:bg-[var(--accent)] hover:text-[var(--foreground)]"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+            Cross-Repo
+          </a>
+        )}
       </header>
 
       {/* Three-panel layout */}
@@ -434,16 +369,6 @@ export function WorkspaceShell({
                     language={activeTab.language}
                     highlightRange={highlightRange}
                     onAskAboutFile={handleAskAboutFile}
-                    workspaceId={workspaceId}
-                    repoId={repo?.id}
-                    threadMarkers={
-                      threadMarkersFile === activeTab.path &&
-                      threadMarkersRepoId === repo?.id
-                        ? threadMarkers
-                        : []
-                    }
-                    onThreadMarkerClick={handleThreadMarkerClick}
-                    onThreadCreated={handleThreadCreated}
                   />
                 ) : null}
               </div>
@@ -456,29 +381,10 @@ export function WorkspaceShell({
         {/* ── Right panel: Chat ── */}
         <Panel defaultSize={30} minSize={20} maxSize={45}>
           <div className="flex h-full flex-col border-l">
-            <div className="flex h-10 shrink-0 items-center justify-between border-b px-3">
+            <div className="flex h-10 shrink-0 items-center border-b px-3">
               <span className="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wider">
                 Chat
               </span>
-              {isReady && repo && (
-                <button
-                  onClick={() => {
-                    setShowThreadsList((v) => !v);
-                    setActiveThread(null);
-                  }}
-                  title="View all discussions"
-                  className={`flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition-colors ${
-                    showThreadsList
-                      ? "bg-indigo-600 text-white"
-                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--accent)]"
-                  }`}
-                >
-                  <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
-                    <path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.458 1.458 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h4.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z" />
-                  </svg>
-                  Discussions
-                </button>
-              )}
             </div>
 
             <ChatPane
@@ -507,88 +413,6 @@ export function WorkspaceShell({
           onClose={() => setShowRepoPicker(false)}
           onConnected={handleConnected}
         />
-      )}
-
-      {/* Thread panel slide-over (from right) */}
-      {(activeThread || showThreadsList) && (
-        <>
-          {/* Backdrop — clicking closes the panel */}
-          <div
-            className="fixed inset-0 z-30 bg-black/20"
-            onClick={() => {
-              setActiveThread(null);
-              setShowThreadsList(false);
-            }}
-            aria-hidden
-          />
-
-          {/* Slide-over panel */}
-          <div className="fixed right-0 top-0 z-40 flex h-full w-80 flex-col border-l bg-[var(--background)] shadow-2xl">
-            {/* Panel header */}
-            <div className="flex h-12 shrink-0 items-center justify-between border-b px-4">
-              <span className="text-sm font-semibold">
-                {activeThread ? "Discussion" : "Discussions"}
-              </span>
-              <div className="flex items-center gap-2">
-                {activeThread && (
-                  <button
-                    onClick={() => {
-                      setActiveThread(null);
-                      setShowThreadsList(true);
-                    }}
-                    className="text-[10px] text-[var(--muted-foreground)] hover:text-[var(--foreground)] underline"
-                  >
-                    All discussions
-                  </button>
-                )}
-                <button
-                  onClick={() => {
-                    setActiveThread(null);
-                    setShowThreadsList(false);
-                  }}
-                  className="rounded p-1 text-[var(--muted-foreground)] hover:text-foreground hover:bg-[var(--accent)] transition-colors"
-                  aria-label="Close panel"
-                >
-                  <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
-                    <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            {/* Panel content */}
-            <div className="flex-1 overflow-hidden">
-              {activeThread && repo ? (
-                <ThreadPanel
-                  thread={activeThread}
-                  workspaceId={workspaceId}
-                  repoId={repo.id}
-                  currentUserId={currentUserId}
-                  onClose={() => setActiveThread(null)}
-                  onCommentAdded={(updated) => setActiveThread(updated)}
-                  onStatusChanged={(updated) => {
-                    setActiveThread(updated);
-                    if (activeTabPath && repo?.id) {
-                      loadThreadMarkersForFile(activeTabPath, repo.id);
-                    }
-                  }}
-                  onDeleted={() => {
-                    setActiveThread(null);
-                    if (activeTabPath && repo?.id) {
-                      loadThreadMarkersForFile(activeTabPath, repo.id);
-                    }
-                  }}
-                />
-              ) : repo ? (
-                <ThreadsList
-                  workspaceId={workspaceId}
-                  repoId={repo.id}
-                  onThreadClick={handleThreadsListClick}
-                />
-              ) : null}
-            </div>
-          </div>
-        </>
       )}
     </div>
     </div>

@@ -68,28 +68,31 @@ export async function getConversation(conversationId: string) {
  *   2. Collecting yielded chunks for SSE streaming
  *   3. Assembling the full assistant text and saving it to DB after done
  *
- * @param conversationId  The conversation to answer in
- * @param question        The user's question text
- * @param history         Messages loaded BEFORE the current user message
- *                        (so the current question is not duplicated in the prompt)
- * @param filePath        Optional: scope retrieval to a specific file
+ * @param conversationId     The conversation to answer in
+ * @param question           The user's question text
+ * @param history            Messages loaded BEFORE the current user message
+ *                           (so the current question is not duplicated in the prompt)
+ * @param filePath           Optional: scope retrieval to a specific file
+ * @param allRepoIds         Optional: all repo IDs in workspace for cross-repo context
  */
 export async function* askQuestion(
   conversationId: string,
   question: string,
   history: Array<{ role: string; content: string }>,
   filePath?: string,
+  allRepoIds?: string[],
 ): AsyncGenerator<ChatAnswerChunk> {
   const conversation = await findConversationById(conversationId);
   if (!conversation) throw new Error(`Conversation ${conversationId} not found`);
 
   const { repoConnectionId } = conversation;
 
-  // Run multi-strategy retrieval
+  // Run multi-strategy retrieval (multi-repo if additional IDs provided)
   const retrievalStart = Date.now();
   const retrievalResult = await retrieve(question, repoConnectionId, {
     maxResults: 15,
     fileFilter: filePath,
+    repoConnectionIds: allRepoIds,
   });
 
   const retrievalTrace: RetrievalTrace = {

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/src/lib/auth";
-import { getWorkspaceWithRepo } from "@/src/modules/workspace/service";
+import { getWorkspaceWithRepos } from "@/src/modules/workspace/service";
 import { WorkspaceShell } from "@/src/components/layout/workspace-shell";
 
 export default async function WorkspacePage({
@@ -15,27 +15,29 @@ export default async function WorkspacePage({
 
   const { workspaceId } = await params;
 
-  const workspace = await getWorkspaceWithRepo(workspaceId, session.userId);
+  const workspace = await getWorkspaceWithRepos(workspaceId, session.userId);
   if (!workspace) {
     redirect("/dashboard");
   }
+
+  const repoInfos = workspace.repoConnections.map((rc) => ({
+    id: rc.id,
+    owner: rc.owner,
+    name: rc.name,
+    status: rc.status,
+    errorMessage: rc.errorMessage ?? null,
+    indexedCommitSha: rc.indexedCommitSha ?? null,
+  }));
+
+  // Primary repo is the most recent one
+  const primaryRepo = repoInfos[0] ?? null;
 
   return (
     <WorkspaceShell
       workspaceId={workspaceId}
       workspaceName={workspace.name}
-      initialRepo={
-        workspace.repoConnection
-          ? {
-              id: workspace.repoConnection.id,
-              owner: workspace.repoConnection.owner,
-              name: workspace.repoConnection.name,
-              status: workspace.repoConnection.status,
-              errorMessage: workspace.repoConnection.errorMessage ?? null,
-              indexedCommitSha: workspace.repoConnection.indexedCommitSha ?? null,
-            }
-          : null
-      }
+      initialRepo={primaryRepo}
+      initialRepos={repoInfos}
     />
   );
 }

@@ -49,6 +49,13 @@ export async function findRepoConnectionByWorkspace(workspaceId: string) {
   });
 }
 
+export async function findRepoConnectionsByWorkspace(workspaceId: string) {
+  return db.query.repoConnections.findMany({
+    where: eq(repoConnections.workspaceId, workspaceId),
+    orderBy: [desc(repoConnections.createdAt)],
+  });
+}
+
 export async function findRepoConnectionById(repoConnectionId: string) {
   return db.query.repoConnections.findFirst({
     where: eq(repoConnections.id, repoConnectionId),
