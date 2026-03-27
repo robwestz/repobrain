@@ -21,6 +21,7 @@ import {
   updateConversationTitle,
 } from "./queries";
 import type { RetrievalTrace } from "../../types/domain";
+import { logger } from "../../lib/logger";
 
 // ---------------------------------------------------------------------------
 // Re-exported chunk type with retrieval metadata
@@ -68,32 +69,32 @@ export async function getConversation(conversationId: string) {
  *   2. Collecting yielded chunks for SSE streaming
  *   3. Assembling the full assistant text and saving it to DB after done
  *
- * @param conversationId     The conversation to answer in
- * @param question           The user's question text
- * @param history            Messages loaded BEFORE the current user message
- *                           (so the current question is not duplicated in the prompt)
- * @param filePath           Optional: scope retrieval to a specific file
- * @param allRepoIds         Optional: all repo IDs in workspace for cross-repo context
+ * @param conversationId  The conversation to answer in
+ * @param question        The user's question text
+ * @param history         Messages loaded BEFORE the current user message
+ *                        (so the current question is not duplicated in the prompt)
+ * @param filePath        Optional: scope retrieval to a specific file
  */
 export async function* askQuestion(
   conversationId: string,
   question: string,
   history: Array<{ role: string; content: string }>,
   filePath?: string,
-  allRepoIds?: string[],
 ): AsyncGenerator<ChatAnswerChunk> {
   const conversation = await findConversationById(conversationId);
   if (!conversation) throw new Error(`Conversation ${conversationId} not found`);
 
   const { repoConnectionId } = conversation;
 
-  // Run multi-strategy retrieval (multi-repo if additional IDs provided)
+  logger.info({ conversationId, repoConnectionId, question: question.slice(0, 120) }, "chat: question received");
+
+  // Run multi-strategy retrieval
   const retrievalStart = Date.now();
   const retrievalResult = await retrieve(question, repoConnectionId, {
     maxResults: 15,
     fileFilter: filePath,
-    repoConnectionIds: allRepoIds,
   });
+  const retrievalDurationMs = Date.now() - retrievalStart;
 
   const retrievalTrace: RetrievalTrace = {
     query: question,
@@ -101,8 +102,13 @@ export async function* askQuestion(
     chunksRetrieved: retrievalResult.totalCandidates,
     chunksAfterReranking: retrievalResult.chunks.length,
     totalTokens: retrievalResult.totalTokens,
-    durationMs: Date.now() - retrievalStart,
+    durationMs: retrievalDurationMs,
   };
+
+  logger.info(
+    { conversationId, repoConnectionId, retrievalDurationMs, chunksRetrieved: retrievalResult.totalCandidates },
+    "chat: retrieval complete",
+  );
 
   // Map history to HistoryMessage (role + content only)
   const historyMessages: HistoryMessage[] = history
@@ -110,9 +116,11 @@ export async function* askQuestion(
     .map((m) => ({ role: m.role, content: m.content }));
 
   // Stream LLM answer — attach metadata to the first chunk
+  const llmStart = Date.now();
   let firstChunk = true;
   for await (const chunk of generateAnswer(question, retrievalResult, historyMessages, repoConnectionId)) {
     if (firstChunk) {
+      logger.info({ conversationId, repoConnectionId, llmDurationMs: Date.now() - llmStart }, "chat: first LLM token");
       yield {
         ...chunk,
         _retrievalTrace: retrievalTrace,

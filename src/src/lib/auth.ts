@@ -9,23 +9,30 @@ export interface SessionData {
   oauthState?: string;
 }
 
-const sessionOptions: SessionOptions = {
-  password:
-    process.env.SESSION_SECRET ||
-    "this-is-a-secret-that-must-be-at-least-32-chars",
-  cookieName: "repobrain_session",
-  cookieOptions: {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax" as const,
-    maxAge: 60 * 60 * 24 * 7, // 7 days
-  },
-};
+function getSessionOptions(): SessionOptions {
+  const sessionSecret = process.env.SESSION_SECRET;
+  if (!sessionSecret || sessionSecret.length < 32) {
+    throw new Error(
+      "SESSION_SECRET environment variable must be set and at least 32 characters long. " +
+        "Generate one with: openssl rand -hex 32",
+    );
+  }
+  return {
+    password: sessionSecret,
+    cookieName: "repobrain_session",
+    cookieOptions: {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax" as const,
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+    },
+  };
+}
 
 export async function getSession() {
   const cookieStore = await cookies();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return getIronSession<SessionData>(cookieStore as any, sessionOptions);
+  return getIronSession<SessionData>(cookieStore as any, getSessionOptions());
 }
 
 export async function requireSession() {

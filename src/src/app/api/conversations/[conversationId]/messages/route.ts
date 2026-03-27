@@ -24,7 +24,11 @@ import { getConversation, askQuestion, maybeSetTitle } from "@/src/modules/chat/
 import { insertMessage, touchConversation } from "@/src/modules/chat/queries";
 import { createSseStream } from "@/src/modules/llm/stream";
 import { findWorkspaceByIdAndUser } from "@/src/modules/workspace/queries";
+import { enforceRateLimit } from "@/src/lib/rate-limit";
+import { RATE_LIMITS } from "@/src/lib/rate-limit-configs";
 import type { Citation, RetrievalTrace } from "@/src/types/domain";
+
+const MAX_QUESTION_LENGTH = 2000;
 
 type RouteContext = { params: Promise<{ conversationId: string }> };
 
@@ -34,6 +38,10 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
   if (!session.userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  // --- Rate limit ---
+  const rateLimitResponse = await enforceRateLimit(session.userId, RATE_LIMITS.chat);
+  if (rateLimitResponse) return rateLimitResponse;
 
   const { conversationId } = await params;
 
@@ -61,6 +69,14 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
   }
 
   const question = body.content.trim();
+
+  if (question.length > MAX_QUESTION_LENGTH) {
+    return NextResponse.json(
+      { error: "Question too long (max 2000 characters)" },
+      { status: 400 },
+    );
+  }
+
   const filePath: string | undefined =
     typeof body.filePath === "string" && body.filePath.trim()
       ? body.filePath.trim()

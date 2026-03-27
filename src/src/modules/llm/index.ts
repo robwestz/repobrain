@@ -33,6 +33,7 @@ import {
 import type { RetrievalResult } from "../../types/retrieval";
 import type { Citation } from "../../types/domain";
 import type { ContextWindow } from "../../types/retrieval";
+import { logger } from "../../lib/logger";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -84,11 +85,26 @@ export async function* generateAnswer(
   // Stream from the selected provider
   const provider = getProvider();
 
+  const llmStart = Date.now();
+  let inputTokens = 0;
+  let outputTokens = 0;
+
   if (provider === "openai") {
-    fullText = yield* streamOpenAI(systemPrompt, messages);
+    ({ text: fullText, inputTokens, outputTokens } = yield* streamOpenAI(systemPrompt, messages));
   } else {
-    fullText = yield* streamAnthropic(systemPrompt, messages);
+    ({ text: fullText, inputTokens, outputTokens } = yield* streamAnthropic(systemPrompt, messages));
   }
+
+  const llmDurationMs = Date.now() - llmStart;
+  logger.info({
+    event: "llm_call",
+    provider,
+    model: LLM_MODEL,
+    inputTokens,
+    outputTokens,
+    durationMs: llmDurationMs,
+    repoId: repoConnectionId,
+  });
 
   // --- Post-stream: parse and validate all citations -----------------------
 
@@ -136,17 +152,26 @@ export async function* generateAnswer(
 // Provider-specific streaming
 // ---------------------------------------------------------------------------
 
+interface StreamResult {
+  text: string;
+  inputTokens: number;
+  outputTokens: number;
+}
+
 async function* streamOpenAI(
   systemPrompt: string,
   messages: Array<{ role: "user" | "assistant"; content: string }>,
-): AsyncGenerator<AnswerChunk, string> {
+): AsyncGenerator<AnswerChunk, StreamResult> {
   const client = getOpenAIClient();
   let fullText = "";
+  let inputTokens = 0;
+  let outputTokens = 0;
 
   const stream = await client.chat.completions.create({
     model: LLM_MODEL,
     max_tokens: LLM_MAX_TOKENS,
     stream: true,
+    stream_options: { include_usage: true },
     messages: [
       { role: "system", content: systemPrompt },
       ...messages,
@@ -159,17 +184,23 @@ async function* streamOpenAI(
       fullText += delta;
       yield { type: "text", content: delta };
     }
+    if (chunk.usage) {
+      inputTokens = chunk.usage.prompt_tokens ?? 0;
+      outputTokens = chunk.usage.completion_tokens ?? 0;
+    }
   }
 
-  return fullText;
+  return { text: fullText, inputTokens, outputTokens };
 }
 
 async function* streamAnthropic(
   systemPrompt: string,
   messages: Array<{ role: "user" | "assistant"; content: string }>,
-): AsyncGenerator<AnswerChunk, string> {
+): AsyncGenerator<AnswerChunk, StreamResult> {
   const client = getAnthropicClient();
   let fullText = "";
+  let inputTokens = 0;
+  let outputTokens = 0;
 
   const stream = client.messages.stream({
     model: LLM_MODEL,
@@ -187,7 +218,13 @@ async function* streamAnthropic(
       fullText += token;
       yield { type: "text", content: token };
     }
+    if (event.type === "message_delta" && event.usage) {
+      outputTokens = event.usage.output_tokens ?? 0;
+    }
+    if (event.type === "message_start" && event.message.usage) {
+      inputTokens = event.message.usage.input_tokens ?? 0;
+    }
   }
 
-  return fullText;
+  return { text: fullText, inputTokens, outputTokens };
 }

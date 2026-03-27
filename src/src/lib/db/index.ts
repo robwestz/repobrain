@@ -1,13 +1,35 @@
-import { drizzle } from "drizzle-orm/node-postgres";
+import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "./schema";
 
-const isLocal = (process.env.DATABASE_URL || "").includes("localhost");
+let _db: NodePgDatabase<typeof schema> | null = null;
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || "postgresql://repobrain:repobrain@localhost:5432/repobrain",
-  ssl: isLocal ? false : { rejectUnauthorized: false },
+function getDb(): NodePgDatabase<typeof schema> {
+  if (!_db) {
+    const connectionString = process.env.DATABASE_URL;
+    if (!connectionString) {
+      throw new Error(
+        "DATABASE_URL environment variable is required but was not set. " +
+          "Example: postgresql://user:password@host:5432/dbname",
+      );
+    }
+    const isLocal =
+      connectionString.includes("localhost") || connectionString.includes("127.0.0.1");
+    const pool = new Pool({
+      connectionString,
+      ssl: isLocal ? false : { rejectUnauthorized: false },
+    });
+    _db = drizzle(pool, { schema });
+  }
+  return _db;
+}
+
+// Proxy that defers pool creation to the first request-time access.
+// Throws a clear error immediately if DATABASE_URL is missing.
+export const db = new Proxy({} as NodePgDatabase<typeof schema>, {
+  get(_target, prop) {
+    return (getDb() as unknown as Record<string | symbol, unknown>)[prop];
+  },
 });
 
-export const db = drizzle(pool, { schema });
 export type Database = typeof db;

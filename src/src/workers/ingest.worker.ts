@@ -22,6 +22,7 @@ import {
 } from "@/src/modules/workspace/queries";
 import * as fs from "fs";
 import * as path from "path";
+import { logger } from "@/src/lib/logger";
 
 interface IngestJobData {
   repoConnectionId: string;
@@ -42,8 +43,7 @@ export function createIngestWorker(redisConnection: { host?: string; port?: numb
     async (job: Job<IngestJobData>) => {
       const { repoConnectionId, clonePath } = job.data;
 
-      console.log(`[ingest-worker] Starting ingestion for repo ${repoConnectionId}`);
-      console.log(`[ingest-worker] Clone path: ${clonePath}`);
+      logger.info({ repoConnectionId, clonePath }, "[ingest-worker] Starting ingestion");
 
       // Verify clone path exists
       if (!fs.existsSync(clonePath)) {
@@ -83,11 +83,16 @@ export function createIngestWorker(redisConnection: { host?: string; port?: numb
           errors: result.errors.length,
         });
 
-        console.log(
-          `[ingest-worker] Ingestion complete for ${repoConnectionId}: ` +
-            `${result.filesProcessed} files processed, ${result.filesSkipped} unchanged, ` +
-            `${result.symbolsExtracted} symbols, ` +
-            `${result.chunksCreated} chunks, ${result.embeddingsGenerated} embeddings`,
+        logger.info(
+          {
+            repoConnectionId,
+            filesProcessed: result.filesProcessed,
+            filesSkipped: result.filesSkipped,
+            symbolsExtracted: result.symbolsExtracted,
+            chunksCreated: result.chunksCreated,
+            embeddingsGenerated: result.embeddingsGenerated,
+          },
+          "[ingest-worker] Ingestion complete",
         );
 
         // Enqueue summary generation job (WS7 will implement the worker)
@@ -104,20 +109,20 @@ export function createIngestWorker(redisConnection: { host?: string; port?: numb
           );
         } catch (err) {
           // Non-fatal: summary generation is a nice-to-have for v1
-          console.warn("[ingest-worker] Failed to enqueue summary job:", err);
+          logger.warn({ err }, "[ingest-worker] Failed to enqueue summary job");
         }
 
         if (result.errors.length > 0) {
-          console.warn(
-            `[ingest-worker] ${result.errors.length} files had errors:`,
-            result.errors.slice(0, 10),
+          logger.warn(
+            { repoConnectionId, errorCount: result.errors.length, errors: result.errors.slice(0, 10) },
+            "[ingest-worker] Some files had errors during ingestion",
           );
         }
 
         return result;
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
-        console.error(`[ingest-worker] Ingestion failed: ${errorMessage}`);
+        logger.error({ repoConnectionId, errorMessage }, "[ingest-worker] Ingestion failed");
 
         await updateRepoConnectionStatus(repoConnectionId, "failed", errorMessage);
         await updateIndexJobStatus(indexJob.id, "failed", undefined, errorMessage);
@@ -135,13 +140,11 @@ export function createIngestWorker(redisConnection: { host?: string; port?: numb
   );
 
   worker.on("completed", (job) => {
-    console.log(
-      `[ingest-worker] Job ${job.id} completed for repo ${job.data.repoConnectionId}`,
-    );
+    logger.info({ jobId: job.id, repoConnectionId: job.data.repoConnectionId }, "[ingest-worker] Job completed");
   });
 
   worker.on("failed", (job, err) => {
-    console.error(`[ingest-worker] Job ${job?.id} failed:`, err.message);
+    logger.error({ jobId: job?.id, err: err.message }, "[ingest-worker] Job failed");
   });
 
   return { worker, summaryQueue };

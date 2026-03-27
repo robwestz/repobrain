@@ -1,0 +1,38 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: src/package-lock.json
+      - name: Install dependencies
+        working-directory: src
+        run: npm ci
+      - name: Lint
+        working-directory: src
+        run: npm run lint
+      - name: Type check
+        working-directory: src
+        run: npx tsc --noEmit
+      - name: Build
+        working-directory: src
+        run: npm run build
+        env:
+          # Minimal env for build (no real secrets needed)
+          DATABASE_URL: postgresql://x:x@localhost:5432/x
+          REDIS_URL: redis://localhost:6379
+          SESSION_SECRET: ci-build-secret-that-is-at-least-32-characters-long
+          GITHUB_CLIENT_ID: ci-placeholder
+          GITHUB_CLIENT_SECRET: ci-placeholder
+          OPENAI_API_KEY: sk-placeholder
+          NEXT_PUBLIC_APP_URL: http://localhost:3000

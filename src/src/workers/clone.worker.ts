@@ -19,6 +19,7 @@ import {
   updateIndexJobStatus,
   findLatestIndexJob,
 } from "@/src/modules/workspace/queries";
+import { logger } from "@/src/lib/logger";
 
 interface CloneJobData {
   repoConnectionId: string;
@@ -42,7 +43,7 @@ export function createCloneWorker(redisConnection: { host?: string; port?: numbe
     async (job: Job<CloneJobData>) => {
       const { repoConnectionId, owner, name, token, clonePath } = job.data;
 
-      console.log(`[clone-worker] Starting clone: ${owner}/${name} → ${clonePath}`);
+      logger.info({ owner, name, clonePath, repoConnectionId }, "[clone-worker] Starting clone");
 
       // Update status to "cloning"
       await updateRepoConnectionStatus(repoConnectionId, "cloning");
@@ -56,7 +57,7 @@ export function createCloneWorker(redisConnection: { host?: string; port?: numbe
       try {
         await cloneRepo(token, owner, name, clonePath);
 
-        console.log(`[clone-worker] Clone complete: ${owner}/${name}`);
+        logger.info({ owner, name, repoConnectionId }, "[clone-worker] Clone complete");
 
         // Transition to "indexing" — WS3 ingest worker will move it to "ready"
         await updateRepoConnectionStatus(repoConnectionId, "indexing");
@@ -85,7 +86,7 @@ export function createCloneWorker(redisConnection: { host?: string; port?: numbe
         }
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
-        console.error(`[clone-worker] Clone failed: ${owner}/${name} — ${errorMessage}`);
+        logger.error({ owner, name, repoConnectionId, errorMessage }, "[clone-worker] Clone failed");
 
         await updateRepoConnectionStatus(repoConnectionId, "failed", errorMessage);
 
@@ -112,11 +113,11 @@ export function createCloneWorker(redisConnection: { host?: string; port?: numbe
   );
 
   worker.on("completed", (job) => {
-    console.log(`[clone-worker] Job ${job.id} completed for repo connection ${job.data.repoConnectionId}`);
+    logger.info({ jobId: job.id, repoConnectionId: job.data.repoConnectionId }, "[clone-worker] Job completed");
   });
 
   worker.on("failed", (job, err) => {
-    console.error(`[clone-worker] Job ${job?.id} failed:`, err.message);
+    logger.error({ jobId: job?.id, err: err.message }, "[clone-worker] Job failed");
   });
 
   return { worker, ingestQueue };

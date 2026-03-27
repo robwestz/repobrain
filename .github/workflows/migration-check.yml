@@ -1,0 +1,29 @@
+name: Migration Check
+on:
+  pull_request:
+    paths:
+      - 'src/src/lib/db/schema*.ts'
+      - 'src/drizzle/**'
+
+jobs:
+  check-migrations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: src/package-lock.json
+      - run: npm ci
+        working-directory: src
+      - name: Generate migrations
+        working-directory: src
+        run: npx drizzle-kit generate
+      - name: Check for uncommitted migration changes
+        run: |
+          if [ -n "$(git status --porcelain src/drizzle/)" ]; then
+            echo "::error::Uncommitted migration files detected. Run 'npx drizzle-kit generate' and commit."
+            git diff src/drizzle/
+            exit 1
+          fi

@@ -19,86 +19,15 @@ import type {
   RetrievalResult,
   RetrievalTiming,
 } from "../../types/retrieval";
+import { logger } from "../../lib/logger";
 
 /**
  * Main retrieval function matching the §09 contract.
  *
  * Runs all three strategies in parallel, merges results, and assembles
  * an LLM-ready context window.
- *
- * When repoConnectionIds contains multiple IDs, runs retrieval on each repo
- * in parallel and merges results. Single-repo behavior is the default.
  */
 export async function retrieve(
-  question: string,
-  repoConnectionId: string,
-  options?: Partial<Omit<RetrievalOptions, "query" | "repoConnectionId">> & {
-    repoConnectionIds?: string[];
-  },
-): Promise<RetrievalResult> {
-  // Multi-repo mode: run on all repos in parallel and merge
-  const additionalRepoIds = options?.repoConnectionIds?.filter(
-    (id) => id !== repoConnectionId,
-  ) ?? [];
-
-  if (additionalRepoIds.length > 0) {
-    return retrieveMultiRepo(question, [repoConnectionId, ...additionalRepoIds], options);
-  }
-
-  return retrieveSingleRepo(question, repoConnectionId, options);
-}
-
-/**
- * Retrieve across multiple repos by running single-repo retrieval in parallel
- * and merging results, keeping repo attribution via repoName labels on chunks.
- */
-async function retrieveMultiRepo(
-  question: string,
-  repoConnectionIds: string[],
-  options?: Partial<Omit<RetrievalOptions, "query" | "repoConnectionId">>,
-): Promise<RetrievalResult> {
-  const results = await Promise.all(
-    repoConnectionIds.map((id) => retrieveSingleRepo(question, id, options)),
-  );
-
-  // Merge all chunks and sort by score descending
-  const allChunks = results.flatMap((r) => r.chunks);
-  allChunks.sort((a, b) => b.score - a.score);
-
-  const maxResults = options?.maxResults ?? 15;
-  const mergedChunks = allChunks.slice(0, maxResults);
-
-  const totalCandidates = results.reduce((sum, r) => sum + r.totalCandidates, 0);
-  const totalTokens = results.reduce((sum, r) => sum + r.totalTokens, 0);
-  const durationMs = Math.max(...results.map((r) => r.durationMs));
-
-  // Use the first repo's summary (primary repo)
-  const repoSummary = results[0]?.repoSummary ?? null;
-
-  const timing = results[0]?.timing ?? {
-    queryExpansionMs: 0,
-    vectorSearchMs: 0,
-    keywordSearchMs: 0,
-    rerankingMs: 0,
-    contextAssemblyMs: 0,
-  };
-
-  return {
-    chunks: mergedChunks,
-    totalCandidates,
-    query: question,
-    expandedQueries: [],
-    repoSummary,
-    totalTokens,
-    durationMs,
-    timing,
-  };
-}
-
-/**
- * Single-repo retrieval — the original implementation.
- */
-async function retrieveSingleRepo(
   question: string,
   repoConnectionId: string,
   options?: Partial<Omit<RetrievalOptions, "query" | "repoConnectionId">>,
@@ -123,6 +52,8 @@ async function retrieveSingleRepo(
   const topK = maxResults > 20 ? 25 : maxResults;
 
   // --- Run all three strategies in parallel ----------------------------------
+  const searchStart = Date.now();
+
   const [semanticResults, lexicalResults, structuralResults] = await Promise.all([
     timedSearch(() => semanticSearch(question, repoConnectionId, candidatePoolSize, similarityThreshold)),
     timedSearch(() => lexicalSearch(question, repoConnectionId, candidatePoolSize)),
@@ -163,6 +94,16 @@ async function retrieveSingleRepo(
   timing.contextAssemblyMs = Date.now() - assemblyStart;
 
   const durationMs = Date.now() - startTime;
+
+  logger.info({
+    event: "retrieval",
+    repoConnectionId,
+    totalCandidates,
+    chunksAfterRanking: rankedChunks.length,
+    totalTokens: contextWindow.totalTokens,
+    durationMs,
+    timing,
+  });
 
   return {
     chunks: rankedChunks,

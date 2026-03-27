@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { env } from "@/src/lib/env";
 
 export function middleware(request: NextRequest) {
+  // Validate all required env vars on the first request — crashes immediately
+  // if misconfigured. env() is memoized so this only parses process.env once.
+  env();
+
   const { pathname } = request.nextUrl;
 
   // Public paths - allow through
