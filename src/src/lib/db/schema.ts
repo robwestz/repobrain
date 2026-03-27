@@ -464,3 +464,5 @@ export const suggestedChangesRelations = relations(suggestedChanges, ({ one }) =
 export const branchActionsRelations = relations(branchActions, ({ one }) => ({
   repoConnection: one(repoConnections, { fields: [branchActions.repoConnectionId], references: [repoConnections.id] }),
 }));
+
+export * from "./schema-bookmarks";

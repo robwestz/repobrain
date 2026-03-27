@@ -6,6 +6,7 @@ Add breadcrumb navigation to the main repo/shell view and create a sidebar navig
 ## Scope (terminology)
 - **Project folder:** all edits happen inside the RepoBrain repository (this repo only).
 - **Workspace (in this job):** RepoBrain’s **in-app** workspace — the product entity that holds connected repos (routes like `/workspace/...`), not the Cursor/IDE workspace name.
+- **Repo shell:** the main layout wrapper around the three-panel UI (file tree, code viewer, chat). In code it lives in `src/components/layout/workspace-shell.tsx` (legacy filename; planning docs say **repo shell**). Rename the file only in a dedicated refactor, not in this job.
 
 ## Size: XS (~30 min)
 
@@ -36,7 +37,7 @@ Behavior:
 - "RepoBrain" links to `/dashboard`
 - In-app workspace name links to `/workspace/{workspaceId}`
 - Repo name is not clickable (current view)
-- File path segments: prefer **decorative only** in this job (do not change file-tree). Optional: links that navigate within the same view only if shell already exposes a hook without touching `file-tree`.
+- File path segments: prefer **decorative only** in this job (do not change file-tree). Optional: links that navigate within the same view only if the repo shell already exposes a hook without touching `file-tree`.
 - Use `/` as separator with Tailwind text-gray-400
 - Truncate the **active file path** string with `...` in the middle if its length is > 60 chars (repo + workspace crumbs are short; truncation targets the path tail)
 - Styling: `text-sm text-gray-500` with hover underlines on links
@@ -44,7 +45,7 @@ Behavior:
 ### 2. Sidebar Navigation Component
 Create `src/components/layout/sidebar-nav.tsx`
 
-A vertical sidebar with icon+label navigation items. This is the main navigation for in-app workspace features (shell-level).
+A vertical sidebar with icon+label navigation items. This is the main navigation for in-app workspace features at the repo shell level.
 
 ```typescript
 interface NavItem {
@@ -56,7 +57,7 @@ interface NavItem {
 }
 
 // Job 01: only Explorer — no routes for features that do not exist yet.
-// Construct where workspaceId is in scope (shell or helper), e.g.:
+// Construct where workspaceId is in scope (repo shell or helper), e.g.:
 // const NAV_ITEMS: NavItem[] = [{ id: "explorer", label: "Explorer", icon: "files", href: `/workspace/${workspaceId}` }];
 ```
 
@@ -67,8 +68,8 @@ Layout:
 - Icons: use simple SVG icons (create inline or use heroicons-style)
 - Bottom section: settings gear icon (decorative / `button` with no navigation in this job unless `/settings` already exists)
 
-### 3. Modify Workspace Shell
-Modify `src/components/layout/workspace-shell.tsx`
+### 3. Modify repo shell
+Modify `src/components/layout/workspace-shell.tsx` (repo shell component)
 
 Current layout:
 ```
@@ -83,7 +84,7 @@ New layout:
 
 - Add Breadcrumbs above the three-panel resizable layout
 - Add Sidebar to the left of everything
-- Breadcrumbs receive in-app `workspaceId`, workspace display name, repo, and file path from WorkspaceShell state
+- Breadcrumbs receive in-app `workspaceId`, workspace display name, repo, and file path from repo shell state
 - Sidebar receives current route (and resolved `href`s) for active highlighting
 
 ## Files to Create
@@ -91,7 +92,7 @@ New layout:
 - `src/components/layout/sidebar-nav.tsx`
 
 ## Files to Modify
-- `src/components/layout/workspace-shell.tsx` — Add breadcrumbs + sidebar to layout
+- `src/components/layout/workspace-shell.tsx` — repo shell: add breadcrumbs + sidebar to layout
 
 ## No DB Changes
 ## No API Changes

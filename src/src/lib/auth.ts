@@ -24,7 +24,8 @@ const sessionOptions: SessionOptions = {
 
 export async function getSession() {
   const cookieStore = await cookies();
-  return getIronSession<SessionData>(cookieStore, sessionOptions);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return getIronSession<SessionData>(cookieStore as any, sessionOptions);
 }
 
 export async function requireSession() {

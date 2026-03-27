@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { BundledLanguage, Highlighter, ThemedToken } from "shiki";
 import { AskAboutFile } from "./ask-about-file";
+import { BookmarkButton, type Bookmark } from "./bookmark-button";
 
 // ---------------------------------------------------------------------------
 // Shiki singleton — lazy-initialized once per browser session
@@ -74,6 +75,13 @@ interface CodeViewerProps {
   language: string | null;
   highlightRange?: { start: number; end: number } | null;
   onAskAboutFile: (filePath: string) => void;
+  // Bookmark props (optional — only wired when repo context is available)
+  workspaceId?: string;
+  repoId?: string;
+  fileId?: string;
+  bookmarks?: Bookmark[];
+  onBookmarkCreated?: (bookmark: Bookmark) => void;
+  onBookmarkRemoved?: (bookmarkId: string) => void;
 }
 
 interface LineData {
@@ -87,12 +95,31 @@ export function CodeViewer({
   language,
   highlightRange,
   onAskAboutFile,
+  workspaceId,
+  repoId,
+  fileId,
+  bookmarks = [],
+  onBookmarkCreated,
+  onBookmarkRemoved,
 }: CodeViewerProps) {
   const [lines, setLines] = useState<LineData[]>([]);
   const [bg, setBg] = useState<string>("transparent");
   const [fg, setFg] = useState<string>("inherit");
   const [shikiError, setShikiError] = useState(false);
   const highlightRef = useRef<HTMLDivElement | null>(null);
+
+  // Bookmark state: current visible range for bookmarking
+  // Uses highlightRange if set, otherwise defaults to full file
+  const bookmarkStart = highlightRange?.start ?? 1;
+  const bookmarkEnd = highlightRange?.end ?? lines.length;
+
+  // Find if there's an existing bookmark covering the current range
+  const existingBookmark = bookmarks.find(
+    (b) =>
+      b.filePath === filePath &&
+      b.startLine === bookmarkStart &&
+      b.endLine === bookmarkEnd,
+  );
 
   // Highlight code with Shiki
   useEffect(() => {
@@ -160,7 +187,20 @@ export function CodeViewer({
         <span className="truncate font-mono text-xs text-[var(--muted-foreground)]" title={filePath}>
           {filePath}
         </span>
-        <div className="ml-2 shrink-0">
+        <div className="ml-2 flex shrink-0 items-center gap-1">
+          {workspaceId && repoId && fileId && onBookmarkCreated && onBookmarkRemoved && (
+            <BookmarkButton
+              workspaceId={workspaceId}
+              repoId={repoId}
+              fileId={fileId}
+              filePath={filePath}
+              startLine={bookmarkStart}
+              endLine={bookmarkEnd}
+              existingBookmark={existingBookmark}
+              onBookmarkCreated={onBookmarkCreated}
+              onBookmarkRemoved={onBookmarkRemoved}
+            />
+          )}
           <AskAboutFile filePath={filePath} onAsk={onAskAboutFile} />
         </div>
       </div>
@@ -184,15 +224,45 @@ export function CodeViewer({
                   line.lineNumber >= highlightRange.start &&
                   line.lineNumber <= highlightRange.end;
 
+                // Find bookmarks that cover this line
+                const lineBookmarks = bookmarks.filter(
+                  (b) =>
+                    b.filePath === filePath &&
+                    line.lineNumber >= b.startLine &&
+                    line.lineNumber <= b.endLine,
+                );
+                const bookmarkColor =
+                  lineBookmarks.length > 0
+                    ? lineBookmarks[0].color ?? "blue"
+                    : null;
+
+                const colorHexMap: Record<string, string> = {
+                  blue: "#3b82f6",
+                  green: "#22c55e",
+                  yellow: "#eab308",
+                  red: "#ef4444",
+                  purple: "#a855f7",
+                };
+
                 return (
                   <tr
                     key={line.lineNumber}
                     data-line={line.lineNumber}
                     className={isHighlighted ? "bg-yellow-400/15" : undefined}
                   >
+                    {/* Bookmark gutter marker */}
+                    <td className="w-2 select-none pl-1 align-top" style={{ userSelect: "none" }}>
+                      {bookmarkColor && (
+                        <span
+                          className="mt-1 block h-2 w-1.5 rounded-sm"
+                          style={{ backgroundColor: colorHexMap[bookmarkColor] ?? "#3b82f6" }}
+                          title={lineBookmarks.map((b) => b.title).join(", ")}
+                        />
+                      )}
+                    </td>
                     {/* Line number */}
                     <td
-                      className="select-none border-r border-white/10 pr-4 pl-4 text-right text-[var(--muted-foreground)] opacity-50 align-top w-12"
+                      className="select-none border-r border-white/10 pr-4 pl-2 text-right text-[var(--muted-foreground)] opacity-50 align-top w-12"
                       style={{ userSelect: "none" }}
                     >
                       {line.lineNumber}

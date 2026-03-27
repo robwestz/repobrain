@@ -5,3 +5,4 @@ node_modules/
 repos/
 agent-logs/
 *.log
+.claude/worktrees/

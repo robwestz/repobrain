@@ -9,6 +9,8 @@ import { FileTree } from "@/src/components/file-tree/file-tree";
 import { TabBar, type OpenTab } from "@/src/components/code-viewer/tab-bar";
 import { CodeViewer } from "@/src/components/code-viewer/code-viewer";
 import { ChatPane } from "@/src/components/chat/chat-pane";
+import { BookmarksPanel } from "@/src/components/workspace/bookmarks-panel";
+import type { Bookmark } from "@/src/components/code-viewer/bookmark-button";
 
 interface RepoInfo {
   id: string;
@@ -53,6 +55,10 @@ export function WorkspaceShell({
 
   // Chat pre-fill (consumed by WS5 chat pane)
   const [prefillQuestion, setPrefillQuestion] = useState("");
+
+  // Bookmarks state
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
+  const [showBookmarks, setShowBookmarks] = useState(false);
 
   // ---------------------------------------------------------------------------
   // Repo lifecycle callbacks
@@ -102,7 +108,7 @@ export function WorkspaceShell({
         setOpenTabs((prev) =>
           prev.map((t) =>
             t.path === path
-              ? { ...t, content: data.content, language: data.language ?? language, loading: false }
+              ? { ...t, content: data.content, language: data.language ?? language, loading: false, fileId: data.fileId }
               : t,
           ),
         );
@@ -152,6 +158,29 @@ export function WorkspaceShell({
     const filename = filePath.split("/").pop() ?? filePath;
     setPrefillQuestion(`Explain the purpose and structure of ${filename}`);
   }, []);
+
+  // ---------------------------------------------------------------------------
+  // Bookmark callbacks
+  // ---------------------------------------------------------------------------
+
+  const handleBookmarkCreated = useCallback((bookmark: Bookmark) => {
+    setBookmarks((prev) => [bookmark, ...prev]);
+  }, []);
+
+  const handleBookmarkRemoved = useCallback((bookmarkId: string) => {
+    setBookmarks((prev) => prev.filter((b) => b.id !== bookmarkId));
+  }, []);
+
+  /**
+   * Navigate to a bookmarked location (called from the bookmarks panel).
+   */
+  const handleBookmarkClick = useCallback(
+    (bookmark: Bookmark) => {
+      openFile(bookmark.filePath, null);
+      setHighlightRange({ start: bookmark.startLine, end: bookmark.endLine });
+    },
+    [openFile],
+  );
 
   // ---------------------------------------------------------------------------
   // Derived state
@@ -207,32 +236,73 @@ export function WorkspaceShell({
             </>
           )}
         </div>
+        {/* Bookmarks toggle button */}
+        {isReady && repo && (
+          <button
+            onClick={() => setShowBookmarks((v) => !v)}
+            title={showBookmarks ? "Hide bookmarks" : "Show bookmarks"}
+            className={`flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors ${
+              showBookmarks
+                ? "bg-[var(--accent)] text-[var(--foreground)]"
+                : "text-[var(--muted-foreground)] hover:bg-[var(--accent)] hover:text-[var(--foreground)]"
+            }`}
+          >
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill={showBookmarks ? "currentColor" : "none"}
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />
+            </svg>
+            Bookmarks
+            {bookmarks.length > 0 && (
+              <span className="rounded-full bg-blue-600 px-1.5 py-0.5 text-[9px] text-white">
+                {bookmarks.length}
+              </span>
+            )}
+          </button>
+        )}
       </header>
 
       {/* Three-panel layout */}
       <PanelGroup direction="horizontal" className="flex-1 overflow-hidden">
-        {/* ── Left panel: File tree ── */}
+        {/* ── Left panel: File tree / Bookmarks ── */}
         <Panel defaultSize={20} minSize={15} maxSize={35}>
           <div className="flex h-full flex-col border-r">
-            <div className="flex h-10 shrink-0 items-center border-b px-3">
-              <span className="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wider">
-                Files
-              </span>
-            </div>
-
-            {isReady && repo ? (
-              <FileTree
+            {showBookmarks && isReady && repo ? (
+              <BookmarksPanel
                 workspaceId={workspaceId}
                 repoId={repo.id}
-                selectedPath={activeTabPath}
-                onSelectFile={openFile}
+                onBookmarkClick={handleBookmarkClick}
               />
             ) : (
-              <div className="flex flex-1 items-center justify-center p-4">
-                <p className="text-center text-xs text-[var(--muted-foreground)]">
-                  {repo ? "Indexing in progress…" : "Connect a repository to browse files"}
-                </p>
-              </div>
+              <>
+                <div className="flex h-10 shrink-0 items-center border-b px-3">
+                  <span className="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wider">
+                    Files
+                  </span>
+                </div>
+
+                {isReady && repo ? (
+                  <FileTree
+                    workspaceId={workspaceId}
+                    repoId={repo.id}
+                    selectedPath={activeTabPath}
+                    onSelectFile={openFile}
+                  />
+                ) : (
+                  <div className="flex flex-1 items-center justify-center p-4">
+                    <p className="text-center text-xs text-[var(--muted-foreground)]">
+                      {repo ? "Indexing in progress…" : "Connect a repository to browse files"}
+                    </p>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </Panel>
@@ -323,6 +393,12 @@ export function WorkspaceShell({
                     language={activeTab.language}
                     highlightRange={highlightRange}
                     onAskAboutFile={handleAskAboutFile}
+                    workspaceId={workspaceId}
+                    repoId={repo?.id}
+                    fileId={activeTab.fileId}
+                    bookmarks={bookmarks}
+                    onBookmarkCreated={handleBookmarkCreated}
+                    onBookmarkRemoved={handleBookmarkRemoved}
                   />
                 ) : null}
               </div>

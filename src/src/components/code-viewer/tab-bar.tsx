@@ -8,6 +8,7 @@ export interface OpenTab {
   content: string | null;
   loading: boolean;
   error?: string;
+  fileId?: string; // DB file ID, populated after file is loaded
 }
 
 interface TabBarProps {
