@@ -5,4 +5,5 @@ export const RATE_LIMITS = {
   search: { windowMs: 60_000, maxRequests: 30, keyPrefix: "search" },
   llmGeneration: { windowMs: 60_000, maxRequests: 5, keyPrefix: "llm-gen" },
   cloneIndex: { windowMs: 300_000, maxRequests: 3, keyPrefix: "clone" },
+  deepResearch: { windowMs: 60_000, maxRequests: 3, keyPrefix: "deep-research" },
 } as const satisfies Record<string, RateLimitConfig>;

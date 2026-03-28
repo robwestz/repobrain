@@ -14,6 +14,8 @@ import { sql, eq } from "drizzle-orm";
 import { db } from "../../lib/db";
 import { repoSummaries, files, chunks, symbols, symbolRelations } from "../../lib/db/schema";
 import type { RankedChunk, ContextWindow, ContextChunk } from "../../types/retrieval";
+import { filterByDomain } from "./domain-filter";
+import type { Domain } from "./domain-filter";
 
 const DEFAULT_MAX_CONTEXT_TOKENS = 12_000;
 
@@ -148,6 +150,8 @@ export async function assembleContext(
     includeRepoSummary?: boolean;
     filePath?: string;
     maxContextTokens?: number;
+    /** If provided, domain-matching chunks are prioritised within the token budget */
+    domain?: Domain;
   } = {},
 ): Promise<ContextWindow> {
   const maxTokens = options.maxContextTokens ?? DEFAULT_MAX_CONTEXT_TOKENS;
@@ -176,12 +180,19 @@ export async function assembleContext(
   }
 
   // 3. Ranked chunks (fill remaining budget)
+  // If a domain was detected, reorder so domain-matching chunks enter the
+  // token budget first. Non-matching chunks still fill any remaining space.
+  // ADDITIVE: we never discard chunks, just change insertion order.
+  const orderedChunks = options.domain
+    ? filterByDomain(rankedChunks, options.domain)
+    : rankedChunks;
+
   const contextChunks: ContextChunk[] = [...fileScopedChunks];
   const seenChunkKeys = new Set(
     fileScopedChunks.map((c) => `${c.filePath}:${c.startLine}-${c.endLine}`),
   );
 
-  for (const chunk of rankedChunks) {
+  for (const chunk of orderedChunks) {
     const key = `${chunk.filePath}:${chunk.startLine}-${chunk.endLine}`;
     if (seenChunkKeys.has(key)) continue;
 
@@ -207,6 +218,7 @@ export async function assembleContext(
     repoSummary,
     contextChunks,
     totalTokens,
+    domain: options.domain,
   };
 }
 

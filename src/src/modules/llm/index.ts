@@ -1,27 +1,15 @@
 /**
- * LLM orchestration — §09 interface contract:
- *
+ * LLM orchestration:
  *   generateAnswer(question, context, history) → AsyncGenerator<AnswerChunk>
- *
- * Responsibilities (this module only):
- *   - Build the prompt from retrieved context + history
- *   - Call the LLM API (OpenAI or Anthropic) with streaming
- *   - Parse citations from the completed response
- *   - Validate citations against the DB
- *   - Yield text tokens, validated citations, and warnings
- *
- * This module does NOT:
- *   - Run retrieval (caller's responsibility)
- *   - Persist messages (caller's responsibility)
- *   - Handle HTTP or SSE (caller's responsibility)
  */
 
 import {
   getProvider,
+  getModel,
+  getActiveModelConfig,
   getAnthropicClient,
   getOpenAIClient,
-  LLM_MODEL,
-  LLM_MAX_TOKENS,
+  getOllamaClient,
 } from "./provider";
 import { buildPrompt, type HistoryMessage } from "./prompt";
 import {
@@ -35,34 +23,17 @@ import type { Citation } from "../../types/domain";
 import type { ContextWindow } from "../../types/retrieval";
 import { logger } from "../../lib/logger";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 export type AnswerChunk =
   | { type: "text"; content: string }
   | { type: "citation"; citation: Citation }
   | { type: "warning"; message: string };
 
-// ---------------------------------------------------------------------------
-// generateAnswer
-// ---------------------------------------------------------------------------
-
-/**
- * Generate a grounded, cited answer for a user question.
- *
- * Yields:
- *   { type: "text", content }     — streamed response tokens (many)
- *   { type: "citation", citation } — validated citation objects (0-N, emitted after stream ends)
- *   { type: "warning", message }  — invalid citations or low-density warning (0-N)
- */
 export async function* generateAnswer(
   question: string,
   retrievalResult: RetrievalResult,
   history: HistoryMessage[],
   repoConnectionId: string,
 ): AsyncGenerator<AnswerChunk> {
-  // Build a ContextWindow from the RetrievalResult for prompt formatting
   const contextWindow: ContextWindow = {
     repoSummary: retrievalResult.repoSummary,
     contextChunks: retrievalResult.chunks.map((c) => ({
@@ -79,152 +50,115 @@ export async function* generateAnswer(
 
   const { systemPrompt, messages } = buildPrompt(question, contextWindow, history);
 
-  // Accumulate full text for post-stream citation extraction
   let fullText = "";
-
-  // Stream from the selected provider
   const provider = getProvider();
+  const model = getModel(provider);
+  const modelCfg = getActiveModelConfig(provider, model);
 
   const llmStart = Date.now();
   let inputTokens = 0;
   let outputTokens = 0;
 
-  if (provider === "openai") {
-    ({ text: fullText, inputTokens, outputTokens } = yield* streamOpenAI(systemPrompt, messages));
+  if (provider === "anthropic") {
+    ({ text: fullText, inputTokens, outputTokens } = yield* streamAnthropic(systemPrompt, messages, model, modelCfg.maxTokens));
+  } else if (provider === "ollama") {
+    ({ text: fullText, inputTokens, outputTokens } = yield* streamOllama(systemPrompt, messages, model, modelCfg.maxTokens));
   } else {
-    ({ text: fullText, inputTokens, outputTokens } = yield* streamAnthropic(systemPrompt, messages));
+    ({ text: fullText, inputTokens, outputTokens } = yield* streamOpenAI(systemPrompt, messages, model, modelCfg.maxTokens));
   }
 
   const llmDurationMs = Date.now() - llmStart;
-  logger.info({
-    event: "llm_call",
-    provider,
-    model: LLM_MODEL,
-    inputTokens,
-    outputTokens,
-    durationMs: llmDurationMs,
-    repoId: repoConnectionId,
-  });
-
-  // --- Post-stream: parse and validate all citations -----------------------
+  logger.info({ event: "llm_call", provider, model, inputTokens, outputTokens, durationMs: llmDurationMs, repoId: repoConnectionId });
 
   const parsed = parseCitations(fullText);
 
   if (parsed.length > 0) {
     const validated = await validateCitations(parsed, repoConnectionId);
     const validCitations = toCitationObjects(validated);
-
-    for (const citation of validCitations) {
-      yield { type: "citation", citation };
-    }
-
+    for (const citation of validCitations) yield { type: "citation", citation };
     const invalid = validated.filter((v) => !v.valid);
     if (invalid.length > 0) {
-      const reasons = invalid
-        .map((v) => `"${v.filePath}:L${v.startLine}-L${v.endLine}" — ${v.invalidReason ?? "unknown reason"}`)
-        .join("; ");
-      yield {
-        type: "warning",
-        message: `${invalid.length} citation(s) could not be verified and may be inaccurate: ${reasons}`,
-      };
+      const reasons = invalid.map((v) => `"${v.filePath}:L${v.startLine}-L${v.endLine}" — ${v.invalidReason ?? "unknown reason"}`).join("; ");
+      yield { type: "warning", message: `${invalid.length} citation(s) could not be verified and may be inaccurate: ${reasons}` };
     }
-
     if (!hasSufficientCitations(fullText, validCitations.length)) {
-      yield {
-        type: "warning",
-        message:
-          "Note: This answer has limited citations. The information above may not be fully grounded in the provided codebase context.",
-      };
+      yield { type: "warning", message: "Note: This answer has limited citations. The information above may not be fully grounded in the provided codebase context." };
     }
   } else {
     const wordCount = fullText.split(/\s+/).filter(Boolean).length;
     if (wordCount > 30) {
-      yield {
-        type: "warning",
-        message:
-          "Note: No code citations were found in this answer. The response may not be grounded in the repository. Consider rephrasing your question.",
-      };
+      yield { type: "warning", message: "Note: No code citations were found in this answer. The response may not be grounded in the repository. Consider rephrasing your question." };
     }
   }
 }
 
-// ---------------------------------------------------------------------------
-// Provider-specific streaming
-// ---------------------------------------------------------------------------
-
-interface StreamResult {
-  text: string;
-  inputTokens: number;
-  outputTokens: number;
-}
+interface StreamResult { text: string; inputTokens: number; outputTokens: number; }
 
 async function* streamOpenAI(
   systemPrompt: string,
   messages: Array<{ role: "user" | "assistant"; content: string }>,
+  model: string,
+  maxTokens: number,
 ): AsyncGenerator<AnswerChunk, StreamResult> {
   const client = getOpenAIClient();
   let fullText = "";
   let inputTokens = 0;
   let outputTokens = 0;
-
   const stream = await client.chat.completions.create({
-    model: LLM_MODEL,
-    max_tokens: LLM_MAX_TOKENS,
-    stream: true,
+    model, max_tokens: maxTokens, stream: true,
     stream_options: { include_usage: true },
-    messages: [
-      { role: "system", content: systemPrompt },
-      ...messages,
-    ],
+    messages: [{ role: "system", content: systemPrompt }, ...messages],
   });
-
   for await (const chunk of stream) {
     const delta = chunk.choices[0]?.delta?.content;
-    if (delta) {
-      fullText += delta;
-      yield { type: "text", content: delta };
-    }
-    if (chunk.usage) {
-      inputTokens = chunk.usage.prompt_tokens ?? 0;
-      outputTokens = chunk.usage.completion_tokens ?? 0;
-    }
+    if (delta) { fullText += delta; yield { type: "text", content: delta }; }
+    if (chunk.usage) { inputTokens = chunk.usage.prompt_tokens ?? 0; outputTokens = chunk.usage.completion_tokens ?? 0; }
   }
-
   return { text: fullText, inputTokens, outputTokens };
 }
 
 async function* streamAnthropic(
   systemPrompt: string,
   messages: Array<{ role: "user" | "assistant"; content: string }>,
+  model: string,
+  maxTokens: number,
 ): AsyncGenerator<AnswerChunk, StreamResult> {
   const client = getAnthropicClient();
   let fullText = "";
   let inputTokens = 0;
   let outputTokens = 0;
-
-  const stream = client.messages.stream({
-    model: LLM_MODEL,
-    max_tokens: LLM_MAX_TOKENS,
-    system: systemPrompt,
-    messages,
-  });
-
+  const stream = client.messages.stream({ model, max_tokens: maxTokens, system: systemPrompt, messages });
   for await (const event of stream) {
-    if (
-      event.type === "content_block_delta" &&
-      event.delta.type === "text_delta"
-    ) {
+    if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
       const token = event.delta.text;
       fullText += token;
       yield { type: "text", content: token };
     }
-    if (event.type === "message_delta" && event.usage) {
-      outputTokens = event.usage.output_tokens ?? 0;
-    }
-    if (event.type === "message_start" && event.message.usage) {
-      inputTokens = event.message.usage.input_tokens ?? 0;
-    }
+    if (event.type === "message_delta" && event.usage) outputTokens = event.usage.output_tokens ?? 0;
+    if (event.type === "message_start" && event.message.usage) inputTokens = event.message.usage.input_tokens ?? 0;
   }
+  return { text: fullText, inputTokens, outputTokens };
+}
 
+async function* streamOllama(
+  systemPrompt: string,
+  messages: Array<{ role: "user" | "assistant"; content: string }>,
+  model: string,
+  maxTokens: number,
+): AsyncGenerator<AnswerChunk, StreamResult> {
+  const client = getOllamaClient();
+  let fullText = "";
+  let inputTokens = 0;
+  let outputTokens = 0;
+  const stream = await client.chat.completions.create({
+    model, max_tokens: maxTokens, stream: true,
+    stream_options: { include_usage: true },
+    messages: [{ role: "system", content: systemPrompt }, ...messages],
+  });
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta?.content;
+    if (delta) { fullText += delta; yield { type: "text", content: delta }; }
+    if (chunk.usage) { inputTokens = chunk.usage.prompt_tokens ?? 0; outputTokens = chunk.usage.completion_tokens ?? 0; }
+  }
   return { text: fullText, inputTokens, outputTokens };
 }

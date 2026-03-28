@@ -316,6 +316,8 @@ export function ChatPane({
           isStreaming={isStreaming}
           prefillValue={prefillQuestion}
           onPrefillUsed={onPrefillUsed}
+          deepResearchAvailable={!!repoConnectionId}
+          workspaceId={workspaceId}
         />
       </div>
     </div>

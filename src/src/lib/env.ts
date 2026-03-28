@@ -6,9 +6,11 @@ const envSchema = z.object({
   GITHUB_REDIRECT_URI: z.string().url(),
   DATABASE_URL: z.string().min(1),
   REDIS_URL: z.string().min(1),
-  OPENAI_API_KEY: z.string().min(1),
+  OPENAI_API_KEY: z.string().min(1).optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
-  DEFAULT_LLM_PROVIDER: z.enum(["openai", "anthropic"]).default("openai"),
+  OLLAMA_HOST: z.string().optional(),
+  OLLAMA_MODEL: z.string().optional(),
+  DEFAULT_LLM_PROVIDER: z.enum(["openai", "anthropic", "ollama"]).default("openai"),
   SESSION_SECRET: z.string().min(32),
   BLOB_STORAGE_PATH: z.string().min(1),
   NEXT_PUBLIC_APP_URL: z.string().url(),
@@ -16,7 +18,6 @@ const envSchema = z.object({
 
 export type Env = z.infer<typeof envSchema>;
 
-// Lazy singleton — validated on first access
 let _env: Env | null = null;
 
 export function env(): Env {
@@ -27,8 +28,6 @@ export function env(): Env {
       throw new Error("Invalid environment variables");
     }
     _env = parsed.data;
-
-    // Production-specific safety checks
     if (process.env.NODE_ENV === "production") {
       if (_env.SESSION_SECRET === "this-is-a-secret-that-must-be-at-least-32-chars") {
         throw new Error("SESSION_SECRET is using the insecure default — set a real secret in production");

@@ -84,6 +84,12 @@ export interface RankedChunk {
 
   /** Token count of this chunk */
   tokenCount: number;
+
+  /**
+   * Domain relevance score from the domain-filter heuristic (optional).
+   * Only present after domain boosting has been applied.
+   */
+  domainScore?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -114,6 +120,12 @@ export interface RetrievalResult {
 
   /** Breakdown of time spent in each pipeline stage */
   timing: RetrievalTiming;
+
+  /**
+   * Detected domain for this query (e.g. "security", "frontend").
+   * Only present when the domain heuristic produced a confident match.
+   */
+  domain?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -222,6 +234,12 @@ export interface ContextWindow {
 
   /** Total token count of the assembled context */
   totalTokens: number;
+
+  /**
+   * Detected domain used to prioritise chunks in this context window.
+   * Only present when domain detection produced a match.
+   */
+  domain?: string;
 }
 
 export interface ContextChunk {

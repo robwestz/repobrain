@@ -1,0 +1,32 @@
+{
+  "defaultProvider": "openai",
+  "providers": {
+    "openai": {
+      "models": {
+        "gpt-4o": { "temperature": 0.7, "maxTokens": 4096 },
+        "gpt-4o-mini": { "temperature": 0.7, "maxTokens": 4096 },
+        "o3-mini": { "temperature": 1.0, "maxTokens": 4096 }
+      },
+      "defaultModel": "gpt-4o",
+      "embeddingModel": "text-embedding-3-small",
+      "apiKeyEnv": "OPENAI_API_KEY"
+    },
+    "anthropic": {
+      "models": {
+        "claude-sonnet-4-20250514": { "temperature": 0.7, "maxTokens": 4096 },
+        "claude-haiku-4-5-20251001": { "temperature": 0.7, "maxTokens": 4096 }
+      },
+      "defaultModel": "claude-sonnet-4-20250514",
+      "apiKeyEnv": "ANTHROPIC_API_KEY"
+    },
+    "ollama": {
+      "models": {
+        "llama3.1": { "temperature": 0.7, "maxTokens": 4096 },
+        "codellama": { "temperature": 0.7, "maxTokens": 4096 }
+      },
+      "defaultModel": "llama3.1",
+      "baseUrl": "http://localhost:11434",
+      "apiKeyEnv": null
+    }
+  }
+}

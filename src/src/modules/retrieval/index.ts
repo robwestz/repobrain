@@ -14,12 +14,12 @@ import { lexicalSearch } from "./lexical";
 import { structuralSearch } from "./structural";
 import { rankAndMerge } from "./ranker";
 import { assembleContext, formatContextForPrompt } from "./context";
+import { detectQueryDomain, applyDomainBoost } from "./domain-filter";
 import type {
   RetrievalOptions,
   RetrievalResult,
   RetrievalTiming,
 } from "../../types/retrieval";
-import { logger } from "../../lib/logger";
 
 /**
  * Main retrieval function matching the §09 contract.
@@ -82,31 +82,30 @@ export async function retrieve(
 
   timing.rerankingMs = Date.now() - rankStart;
 
+  // --- Domain detection + boosting ------------------------------------------
+  // Heuristic, no LLM. Detects the likely domain from the query and boosts
+  // matching chunks by +0.2. ADDITIVE: chunks are never removed, only reordered.
+  const detectedDomain = detectQueryDomain(question);
+  const domainBoostedChunks = detectedDomain
+    ? applyDomainBoost(rankedChunks, detectedDomain).sort((a, b) => b.score - a.score)
+    : rankedChunks;
+
   // --- Context assembly ------------------------------------------------------
   const assemblyStart = Date.now();
 
-  const contextWindow = await assembleContext(rankedChunks, repoConnectionId, {
+  const contextWindow = await assembleContext(domainBoostedChunks, repoConnectionId, {
     includeRepoSummary,
     filePath,
     maxContextTokens,
+    domain: detectedDomain ?? undefined,
   });
 
   timing.contextAssemblyMs = Date.now() - assemblyStart;
 
   const durationMs = Date.now() - startTime;
 
-  logger.info({
-    event: "retrieval",
-    repoConnectionId,
-    totalCandidates,
-    chunksAfterRanking: rankedChunks.length,
-    totalTokens: contextWindow.totalTokens,
-    durationMs,
-    timing,
-  });
-
   return {
-    chunks: rankedChunks,
+    chunks: domainBoostedChunks,
     totalCandidates,
     query: question,
     expandedQueries: [], // query expansion reserved for future enhancement
@@ -114,6 +113,7 @@ export async function retrieve(
     totalTokens: contextWindow.totalTokens,
     durationMs,
     timing,
+    domain: detectedDomain ?? undefined,
   };
 }
 
