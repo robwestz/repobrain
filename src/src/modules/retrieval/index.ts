@@ -13,7 +13,7 @@ import { semanticSearch } from "./semantic";
 import { lexicalSearch } from "./lexical";
 import { structuralSearch } from "./structural";
 import { rankAndMerge } from "./ranker";
-import { assembleContext, formatContextForPrompt } from "./context";
+import { assembleContext } from "./context";
 import { detectQueryDomain, applyDomainBoost } from "./domain-filter";
 import type {
   RetrievalOptions,
@@ -52,8 +52,6 @@ export async function retrieve(
   const topK = maxResults > 20 ? 25 : maxResults;
 
   // --- Run all three strategies in parallel ----------------------------------
-  const searchStart = Date.now();
-
   const [semanticResults, lexicalResults, structuralResults] = await Promise.all([
     timedSearch(() => semanticSearch(question, repoConnectionId, candidatePoolSize, similarityThreshold)),
     timedSearch(() => lexicalSearch(question, repoConnectionId, candidatePoolSize)),

@@ -12,7 +12,7 @@
 
 import { sql, eq } from "drizzle-orm";
 import { db } from "../../lib/db";
-import { repoSummaries, files, chunks, symbols, symbolRelations } from "../../lib/db/schema";
+import { repoSummaries } from "../../lib/db/schema";
 import type { RankedChunk, ContextWindow, ContextChunk } from "../../types/retrieval";
 import { filterByDomain } from "./domain-filter";
 import type { Domain } from "./domain-filter";

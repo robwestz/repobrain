@@ -54,8 +54,6 @@ export function IndexProgress({
     errorMessage: null,
     job: null,
   });
-  const [pollCount, setPollCount] = useState(0);
-
   useEffect(() => {
     // Stop polling once we reach a terminal state
     if (status.repoStatus === "ready" || status.repoStatus === "failed") {

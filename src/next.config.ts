@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 const securityHeaders = [
   {
@@ -28,6 +29,10 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Pin workspace root to this directory to prevent multi-lockfile detection
+  // from inferring the wrong root (which causes ENOENT during trace collection
+  // on Windows when nested or sibling lockfiles exist).
+  outputFileTracingRoot: path.resolve(process.cwd()),
   serverExternalPackages: ["pg", "ioredis", "bullmq", "simple-git", "web-tree-sitter"],
   async headers() {
     return [

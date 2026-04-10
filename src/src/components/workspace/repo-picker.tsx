@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { X, Search, GitFork, Lock, Globe, Loader2 } from "lucide-react";
+import { X, Search, Lock, Globe, Loader2 } from "lucide-react";
 import type { GitHubRepo } from "@/src/modules/github/repos";
 
 interface RepoPickerProps {

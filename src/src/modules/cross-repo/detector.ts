@@ -11,7 +11,7 @@
 
 import { sql, eq, inArray } from "drizzle-orm";
 import { db } from "@/src/lib/db";
-import { files, symbols, repoConnections } from "@/src/lib/db/schema";
+import { repoConnections } from "@/src/lib/db/schema";
 import { crossRepoRelations } from "@/src/lib/db/schema-cross-repo";
 
 export interface CrossRepoRelation {

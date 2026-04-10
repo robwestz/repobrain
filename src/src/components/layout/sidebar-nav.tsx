@@ -56,7 +56,7 @@ export function SidebarNav({ workspaceId }: { workspaceId: string }) {
         {items.map((item) => {
           const active = isActive(item.href);
           return (
-            <a // eslint-disable-line @next/next/no-html-link-for-pages
+            <a
               key={item.id}
               href={item.href}
               title={item.label}

@@ -113,11 +113,13 @@ export function ThreadPanel({
   const commentsEndRef = useRef<HTMLDivElement>(null);
 
   // Sync when initialThread changes (e.g. different thread opened)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // We intentionally key on .id instead of the full object to avoid resetting
+  // local state on every parent re-render.
   useEffect(() => {
     setThread(initialThread);
     setCommentInput("");
     setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialThread.id]);
 
   // Scroll to bottom when comments change

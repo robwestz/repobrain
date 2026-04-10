@@ -2,7 +2,9 @@ node_modules/
 .next/
 .env
 .env.local
-repos/
+# Cloned repos blob storage (root only — not the [workspaceId]/repos/ route directory)
+/repos/
+/src/repos/
 agent-logs/
 *.log
 .claude/worktrees/

@@ -16,13 +16,13 @@ import {
   chunks as chunksTable,
   embeddings as embeddingsTable,
 } from "@/src/lib/db/schema";
-import { eq, sql, and, inArray } from "drizzle-orm";
+import { eq, sql, inArray } from "drizzle-orm";
 import { walkRepo, type WalkedFile } from "./walker";
 import { detectLanguage } from "./language";
 import { extractSymbols, type ExtractionResult } from "./symbols";
 import { buildSymbolRelations, type FileSymbolData } from "./relations";
 import { chunkFile, type ChunkResult } from "./chunker";
-import { generateEmbeddings, EMBEDDING_MODEL } from "./embedder";
+import { generateEmbeddings } from "./embedder";
 import { createProgressReporter } from "./progress";
 
 export interface IndexResult {
@@ -163,7 +163,6 @@ export async function indexRepo(
       const chunks = chunkFile(
         record.walkedFile.content,
         symbolsWithIds,
-        record.walkedFile.relativePath,
       );
       for (const chunk of chunks) {
         allChunks.push({ fileId: record.fileId, chunk });

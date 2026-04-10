@@ -57,7 +57,6 @@ export function countTokens(text: string): number {
 export function chunkFile(
   content: string,
   symbols: Array<ExtractedSymbol & { id?: string }>,
-  filePath: string,
 ): ChunkResult[] {
   const lines = content.split("\n");
   if (lines.length === 0) return [];
