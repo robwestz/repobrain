@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/src/lib/auth";
 import { listWorkspacesForUser } from "@/src/modules/workspace/service";
 import { CreateWorkspaceButton } from "@/src/components/workspace/create-workspace-button";
+import { ConnectOpenAIButton } from "@/src/components/openai/connect-openai-button";
 import Link from "next/link";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -43,6 +44,7 @@ export default async function DashboardPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            <ConnectOpenAIButton />
             <CreateWorkspaceButton />
             <form action="/api/auth/logout" method="POST">
               <button

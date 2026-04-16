@@ -7,6 +7,12 @@ export interface SessionData {
   githubAccessToken?: string;
   avatarUrl?: string;
   oauthState?: string;
+  // OpenAI OAuth
+  openaiAccessToken?: string;
+  openaiRefreshToken?: string;
+  openaiExpiresAt?: number; // Unix timestamp in ms
+  openaiOauthState?: string; // CSRF state for OpenAI OAuth
+  openaiCodeVerifier?: string; // PKCE code_verifier stored during auth flow
 }
 
 function getSessionOptions(): SessionOptions {

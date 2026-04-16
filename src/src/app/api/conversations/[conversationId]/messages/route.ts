@@ -112,6 +112,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
         question,
         historySnapshot,
         filePath,
+        session.openaiAccessToken,
       )) {
         if (chunk.type === "text") {
           const token = chunk.content;
