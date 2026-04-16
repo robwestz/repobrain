@@ -18,6 +18,13 @@ import {
 } from "@/src/modules/openai/oauth";
 
 export async function GET() {
+  if (!process.env.OPENAI_CLIENT_ID) {
+    return NextResponse.json(
+      { error: "OpenAI OAuth is not configured — set OPENAI_CLIENT_ID" },
+      { status: 404 },
+    );
+  }
+
   const session = await getSession();
   if (!session.userId) {
     return NextResponse.json({ error: "Unauthorized — log in with GitHub first" }, { status: 401 });
