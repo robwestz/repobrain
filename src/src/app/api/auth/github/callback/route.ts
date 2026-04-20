@@ -66,7 +66,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.redirect(new URL("/dashboard", request.url));
   } catch (error) {
-    console.error("GitHub OAuth callback error:", error);
+    const { logger } = await import("@/src/lib/logger");
+    logger.error({ err: error }, "GitHub OAuth callback error");
     return NextResponse.redirect(
       new URL("/auth/login?error=oauth_failed", request.url),
     );
