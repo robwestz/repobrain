@@ -20,7 +20,7 @@ export async function GET() {
     return NextResponse.json(repos);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to fetch repositories";
-    logger.error({ err: message }, "api/github/repos: failed to fetch repositories");
+    logger.error({ err }, "api/github/repos: failed to fetch repositories");
     return NextResponse.json({ error: message }, { status: 502 });
   }
 }
