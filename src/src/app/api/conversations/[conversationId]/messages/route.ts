@@ -108,11 +108,21 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     let retrievalTrace: RetrievalTrace | null = null;
 
     try {
+      // Only pass the user's OpenAI OAuth token if it hasn't expired;
+      // otherwise fall back to the server OPENAI_API_KEY.
+      const openaiToken =
+        session.openaiAccessToken &&
+        session.openaiExpiresAt &&
+        session.openaiExpiresAt > Date.now()
+          ? session.openaiAccessToken
+          : undefined;
+
       for await (const chunk of askQuestion(
         conversationId,
         question,
         historySnapshot,
         filePath,
+        openaiToken,
       )) {
         if (chunk.type === "text") {
           const token = chunk.content;

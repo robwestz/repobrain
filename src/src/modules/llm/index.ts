@@ -33,6 +33,7 @@ export async function* generateAnswer(
   retrievalResult: RetrievalResult,
   history: HistoryMessage[],
   repoConnectionId: string,
+  openaiAccessToken?: string,
 ): AsyncGenerator<AnswerChunk> {
   const contextWindow: ContextWindow = {
     repoSummary: retrievalResult.repoSummary,
@@ -64,7 +65,7 @@ export async function* generateAnswer(
   } else if (provider === "ollama") {
     ({ text: fullText, inputTokens, outputTokens } = yield* streamOllama(systemPrompt, messages, model, modelCfg.maxTokens));
   } else {
-    ({ text: fullText, inputTokens, outputTokens } = yield* streamOpenAI(systemPrompt, messages, model, modelCfg.maxTokens));
+    ({ text: fullText, inputTokens, outputTokens } = yield* streamOpenAI(systemPrompt, messages, model, modelCfg.maxTokens, openaiAccessToken));
   }
 
   const llmDurationMs = Date.now() - llmStart;
@@ -99,8 +100,9 @@ async function* streamOpenAI(
   messages: Array<{ role: "user" | "assistant"; content: string }>,
   model: string,
   maxTokens: number,
+  openaiAccessToken?: string,
 ): AsyncGenerator<AnswerChunk, StreamResult> {
-  const client = getOpenAIClient();
+  const client = getOpenAIClient(openaiAccessToken);
   let fullText = "";
   let inputTokens = 0;
   let outputTokens = 0;

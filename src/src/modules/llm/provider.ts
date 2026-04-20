@@ -101,10 +101,17 @@ export function getAnthropicClient(): Anthropic {
 
 let _openai: OpenAI | null = null;
 
-export function getOpenAIClient(): OpenAI {
+export function getOpenAIClient(accessToken?: string): OpenAI {
+  if (accessToken) {
+    // Per-user OAuth token — don't cache as singleton
+    return new OpenAI({ apiKey: accessToken });
+  }
   if (!_openai) {
     const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) throw new Error("OPENAI_API_KEY environment variable is not set");
+    if (!apiKey)
+      throw new Error(
+        "OPENAI_API_KEY environment variable is not set and no user OAuth token provided",
+      );
     _openai = new OpenAI({ apiKey });
   }
   return _openai;

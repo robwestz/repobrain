@@ -80,6 +80,7 @@ export async function* askQuestion(
   question: string,
   history: Array<{ role: string; content: string }>,
   filePath?: string,
+  openaiAccessToken?: string,
 ): AsyncGenerator<ChatAnswerChunk> {
   const conversation = await findConversationById(conversationId);
   if (!conversation) throw new Error(`Conversation ${conversationId} not found`);
@@ -118,7 +119,7 @@ export async function* askQuestion(
   // Stream LLM answer — attach metadata to the first chunk
   const llmStart = Date.now();
   let firstChunk = true;
-  for await (const chunk of generateAnswer(question, retrievalResult, historyMessages, repoConnectionId)) {
+  for await (const chunk of generateAnswer(question, retrievalResult, historyMessages, repoConnectionId, openaiAccessToken)) {
     if (firstChunk) {
       logger.info({ conversationId, repoConnectionId, llmDurationMs: Date.now() - llmStart }, "chat: first LLM token");
       yield {

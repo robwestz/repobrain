@@ -11,6 +11,8 @@ const envSchema = z.object({
   ANTHROPIC_API_KEY: z.string().optional(),
   OLLAMA_HOST: z.string().optional(),
   OLLAMA_MODEL: z.string().optional(),
+  OPENAI_CLIENT_ID: z.string().optional(),
+  OPENAI_REDIRECT_URI: z.string().url().optional().default("http://localhost:3000/api/auth/openai/callback"),
   DEFAULT_LLM_PROVIDER: z.enum(["openai", "anthropic", "ollama"]).default("openai"),
   SESSION_SECRET: z.string().min(32),
   BLOB_STORAGE_PATH: z.string().min(1),
