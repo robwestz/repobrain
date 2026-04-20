@@ -16,7 +16,7 @@
     "ci": "npm run lint && npm run typecheck && npm run build"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.32.0",
+    "@anthropic-ai/sdk": "^0.87.0",
     "bullmq": "^5.25.0",
     "clsx": "^2.1.0",
     "drizzle-orm": "^0.38.0",
