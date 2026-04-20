@@ -24,6 +24,7 @@ import { buildSymbolRelations, type FileSymbolData } from "./relations";
 import { chunkFile, type ChunkResult } from "./chunker";
 import { generateEmbeddings } from "./embedder";
 import { createProgressReporter } from "./progress";
+import { logger } from "@/src/lib/logger";
 
 export interface IndexResult {
   filesProcessed: number;
@@ -53,9 +54,9 @@ export async function indexRepo(
   const errors: Array<{ file: string; error: string }> = [];
 
   // Step 1: Walk the repository
-  console.log(`[ingestion] Walking repo at ${clonePath}`);
+  logger.info({ clonePath }, "ingestion: walking repo");
   const walkedFiles = await walkRepo(clonePath);
-  console.log(`[ingestion] Found ${walkedFiles.length} files to process`);
+  logger.info({ fileCount: walkedFiles.length }, "ingestion: files found");
 
   const reporter = createProgressReporter(repoConnectionId, indexJobId, walkedFiles.length);
   await reporter.report(true);
@@ -65,9 +66,9 @@ export async function indexRepo(
     repoConnectionId,
     walkedFiles,
   );
-  console.log(
-    `[ingestion] Diff: ${filesToProcess.length} new/changed, ` +
-      `${skippedCount} unchanged, ${filesToDelete.length} deleted`,
+  logger.info(
+    { newChanged: filesToProcess.length, unchanged: skippedCount, deleted: filesToDelete.length },
+    "ingestion: diff result",
   );
 
   // Remove stale files (cascading deletes remove their symbols/chunks/embeddings)
@@ -118,9 +119,9 @@ export async function indexRepo(
     reporter.incrementFiles();
   }
 
-  console.log(
-    `[ingestion] Processed ${fileRecords.length} files, extracted ` +
-      `${reporter.current.symbols_found} symbols`,
+  logger.info(
+    { filesProcessed: fileRecords.length, symbolsFound: reporter.current.symbols_found },
+    "ingestion: file processing complete",
   );
 
   // Step 4: Insert symbols and get their IDs (only for new/changed files)
@@ -145,7 +146,7 @@ export async function indexRepo(
   if (edges.length > 0) {
     await insertSymbolRelations(edges);
   }
-  console.log(`[ingestion] Created ${edges.length} symbol relations`);
+  logger.info({ count: edges.length }, "ingestion: symbol relations created");
 
   // Step 6: Chunk new/changed files
   reporter.setPhase("chunking");
@@ -175,7 +176,7 @@ export async function indexRepo(
 
   reporter.addChunks(allChunks.length);
   await reporter.report(true);
-  console.log(`[ingestion] Created ${allChunks.length} chunks`);
+  logger.info({ count: allChunks.length }, "ingestion: chunks created");
 
   // Step 7: Insert chunks and get their IDs
   const chunkIds = await insertChunks(allChunks, fileSymbolData);
@@ -196,7 +197,7 @@ export async function indexRepo(
     );
 
     await insertEmbeddings(chunkIds, embeddingResults);
-    console.log(`[ingestion] Generated ${embeddingResults.length} embeddings`);
+    logger.info({ count: embeddingResults.length }, "ingestion: embeddings generated");
   }
 
   // Step 9: Create full-text search index on chunks (idempotent, IF NOT EXISTS)
@@ -218,7 +219,7 @@ export async function indexRepo(
     errors,
   };
 
-  console.log(`[ingestion] Indexing complete:`, result);
+  logger.info({ result }, "ingestion: indexing complete");
   return result;
 }
 
@@ -292,7 +293,7 @@ async function removeStaleFiles(fileIds: string[]): Promise<void> {
     const batch = fileIds.slice(i, i + BATCH_SIZE);
     await db.delete(filesTable).where(inArray(filesTable.id, batch));
   }
-  console.log(`[ingestion] Removed ${fileIds.length} stale files`);
+  logger.info({ count: fileIds.length }, "ingestion: removed stale files");
 }
 
 async function processFile(
@@ -459,7 +460,7 @@ async function insertSymbols(
           });
         }
       } catch (err) {
-        console.warn(`[ingestion] Failed to insert symbol ${sym.name}:`, err);
+        logger.warn({ err, symbol: sym.name }, "ingestion: failed to insert symbol");
       }
     }
 
@@ -489,7 +490,7 @@ async function insertSymbolRelations(edges: Array<{ fromSymbolId: string; toSymb
         })),
       );
     } catch (err) {
-      console.warn(`[ingestion] Failed to insert symbol relations batch:`, err);
+      logger.warn({ err }, "ingestion: failed to insert symbol relations batch");
     }
   }
 }
@@ -539,7 +540,7 @@ async function insertChunks(
         chunkIds.push(row.id);
       }
     } catch (err) {
-      console.warn(`[ingestion] Failed to insert chunk batch:`, err);
+      logger.warn({ err }, "ingestion: failed to insert chunk batch");
       // Push nulls to maintain index alignment
       for (let j = 0; j < batch.length; j++) {
         chunkIds.push("");
@@ -571,7 +572,7 @@ async function insertEmbeddings(
         })),
       );
     } catch (err) {
-      console.warn(`[ingestion] Failed to insert embedding batch:`, err);
+      logger.warn({ err }, "ingestion: failed to insert embedding batch");
     }
   }
 }
@@ -586,9 +587,9 @@ async function createFullTextIndex(): Promise<void> {
       CREATE INDEX IF NOT EXISTS chunks_content_fts_idx
       ON chunks USING GIN (to_tsvector('english', content))
     `);
-    console.log("[ingestion] Created full-text search index on chunks");
+    logger.info("ingestion: created full-text search index on chunks");
   } catch (err) {
-    console.warn("[ingestion] Failed to create FTS index:", err);
+    logger.warn({ err }, "ingestion: failed to create FTS index");
   }
 
   // Also create trigram index for partial matching
@@ -598,9 +599,9 @@ async function createFullTextIndex(): Promise<void> {
       CREATE INDEX IF NOT EXISTS chunks_content_trgm_idx
       ON chunks USING GIN (content gin_trgm_ops)
     `);
-    console.log("[ingestion] Created trigram index on chunks");
+    logger.info("ingestion: created trigram index on chunks");
   } catch (err) {
-    console.warn("[ingestion] Failed to create trigram index:", err);
+    logger.warn({ err }, "ingestion: failed to create trigram index");
   }
 }
 
@@ -616,9 +617,9 @@ async function createVectorIndex(): Promise<void> {
       ON embeddings USING hnsw (vector vector_cosine_ops)
       WITH (m = 16, ef_construction = 200)
     `);
-    console.log("[ingestion] Created HNSW vector index on embeddings");
+    logger.info("ingestion: created HNSW vector index on embeddings");
   } catch (err) {
-    console.warn("[ingestion] Failed to create HNSW index:", err);
+    logger.warn({ err }, "ingestion: failed to create HNSW index");
   }
 }
 

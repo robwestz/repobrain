@@ -11,6 +11,7 @@
 import "dotenv/config";
 import { createCloneWorker } from "./clone.worker";
 import { createIngestWorker } from "./ingest.worker";
+import { logger } from "../lib/logger";
 
 const REDIS_URL = process.env.REDIS_URL;
 if (!REDIS_URL) {
@@ -33,25 +34,25 @@ function parseRedisUrl(url: string): { host: string; port: number; password?: st
 
 const redisConnection = parseRedisUrl(REDIS_URL);
 
-console.log(`[workers] Connecting to Redis at ${redisConnection.host}:${redisConnection.port}`);
+logger.info({ host: redisConnection.host, port: redisConnection.port }, "workers: connecting to Redis");
 
 // Start clone worker
 const { worker: cloneWorker } = createCloneWorker(redisConnection);
-console.log("[workers] Clone worker started");
+logger.info("workers: clone worker started");
 
 // Start ingest worker
 const { worker: ingestWorker } = createIngestWorker(redisConnection);
-console.log("[workers] Ingest worker started");
+logger.info("workers: ingest worker started");
 
 // Graceful shutdown
 async function shutdown() {
-  console.log("[workers] Shutting down workers...");
+  logger.info("workers: shutting down...");
   await Promise.all([cloneWorker.close(), ingestWorker.close()]);
-  console.log("[workers] All workers stopped");
+  logger.info("workers: all workers stopped");
   process.exit(0);
 }
 
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
 
-console.log("[workers] All workers running. Press Ctrl+C to stop.");
+logger.info("workers: all workers running. Press Ctrl+C to stop.");

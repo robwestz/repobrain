@@ -27,6 +27,7 @@ import { findWorkspaceByIdAndUser } from "@/src/modules/workspace/queries";
 import { enforceRateLimit } from "@/src/lib/rate-limit";
 import { RATE_LIMITS } from "@/src/lib/rate-limit-configs";
 import type { Citation, RetrievalTrace } from "@/src/types/domain";
+import { logger } from "@/src/lib/logger";
 
 const MAX_QUESTION_LENGTH = 2000;
 
@@ -149,7 +150,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       emit({ type: "done", messageId: saved.id });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred";
-      console.error("[chat/messages] generation error:", err);
+      logger.error({ err, conversationId }, "chat/messages: generation error");
       emit({ type: "error", error: errorMessage });
     } finally {
       close();

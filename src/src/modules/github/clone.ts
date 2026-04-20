@@ -29,14 +29,16 @@ export async function cloneRepo(
     fs.mkdirSync(parentDir, { recursive: true });
   }
 
-  // Build authenticated HTTPS clone URL
-  const cloneUrl = `https://oauth2:${token}@github.com/${owner}/${name}.git`;
+  // Clone URL without embedded credentials — token is passed via HTTP header
+  // to prevent leaking in .git/config, process arguments, or error logs.
+  const cloneUrl = `https://github.com/${owner}/${name}.git`;
 
   const git = simpleGit();
   await git.clone(cloneUrl, targetPath, [
     "--depth", "1",        // Shallow clone — we only need the latest snapshot
     "--no-tags",           // Skip tags to reduce transfer size
     "--single-branch",     // Only fetch the default branch
+    "-c", `http.https://github.com/.extraheader=Authorization: basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`,
   ]);
 }
 

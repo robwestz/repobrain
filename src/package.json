@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "worker": "tsx src/workers/index.ts",
     "db:migrate": "tsx src/lib/db/migrate.ts",
     "db:generate": "drizzle-kit generate",

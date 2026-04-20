@@ -130,7 +130,8 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       emit({ type: "done" });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Deep research failed";
-      console.error("[deep-research] error:", err);
+      const { logger } = await import("@/src/lib/logger");
+      logger.error({ err }, "deep-research: generation error");
       emit({ type: "error", error: errorMessage });
     } finally {
       close();

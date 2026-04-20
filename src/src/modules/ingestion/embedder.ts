@@ -112,9 +112,10 @@ async function embedBatchWithRetry(texts: string[]): Promise<number[][]> {
 
       // Exponential backoff with jitter
       const delay = BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 1000;
-      console.warn(
-        `[embedder] Rate limited or server error (attempt ${attempt + 1}/${MAX_RETRIES}), ` +
-          `retrying in ${Math.round(delay)}ms...`,
+      const { logger } = await import("@/src/lib/logger");
+      logger.warn(
+        { attempt: attempt + 1, maxRetries: MAX_RETRIES, delayMs: Math.round(delay) },
+        "embedder: rate limited or server error, retrying",
       );
       await sleep(delay);
     }

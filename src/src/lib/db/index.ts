@@ -17,7 +17,7 @@ function getDb(): NodePgDatabase<typeof schema> {
       connectionString.includes("localhost") || connectionString.includes("127.0.0.1");
     const pool = new Pool({
       connectionString,
-      ssl: isLocal ? false : { rejectUnauthorized: false },
+      ssl: isLocal ? false : { rejectUnauthorized: true },
     });
     _db = drizzle(pool, { schema });
   }
