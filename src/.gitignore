@@ -17,6 +17,7 @@
 
 # production
 /build
+/dist
 
 # misc
 .DS_Store
@@ -43,4 +44,4 @@ next-env.d.ts
 /repos/
 
 # drizzle
-/drizzle/meta/
+# NOTE: drizzle/meta/ must be tracked for migration-check CI to work

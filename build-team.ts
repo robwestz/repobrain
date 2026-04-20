@@ -14,9 +14,11 @@ delete process.env.ANTHROPIC_API_KEY;
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 
-const PROJECT_DIR = "D:/aktiva-projekt/mix/repobrain";
+const __filename = fileURLToPath(import.meta.url);
+const PROJECT_DIR = dirname(__filename);
 const MASTER_PACKAGE = join(PROJECT_DIR, "00_MASTER_PACKAGE.md");
 const BOOTSTRAP_FILE = join(PROJECT_DIR, "01_BOOTSTRAP.md");
 const BUILD_DIR = join(PROJECT_DIR, "src");

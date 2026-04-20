@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { logger } from "./logger";
 
 const envSchema = z.object({
   GITHUB_CLIENT_ID: z.string().min(1),
@@ -24,7 +25,7 @@ export function env(): Env {
   if (!_env) {
     const parsed = envSchema.safeParse(process.env);
     if (!parsed.success) {
-      console.error("Invalid environment variables:", parsed.error.flatten().fieldErrors);
+      logger.error({ fields: parsed.error.flatten().fieldErrors }, "Invalid environment variables");
       throw new Error("Invalid environment variables");
     }
     _env = parsed.data;

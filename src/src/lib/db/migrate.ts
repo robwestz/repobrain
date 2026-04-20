@@ -4,11 +4,14 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Pool } from "pg";
 
 async function main() {
-  const connString = process.env.DATABASE_URL || "postgresql://repobrain:repobrain@localhost:5432/repobrain";
-  const isLocal = connString.includes("localhost");
+  const connString = process.env.DATABASE_URL;
+  if (!connString) {
+    throw new Error("DATABASE_URL environment variable is required for migrations");
+  }
+  const isLocal = connString.includes("localhost") || connString.includes("127.0.0.1");
   const pool = new Pool({
     connectionString: connString,
-    ssl: isLocal ? false : { rejectUnauthorized: false },
+    ssl: isLocal ? false : { rejectUnauthorized: true },
   });
 
   // Ensure pgvector extension exists
@@ -16,13 +19,15 @@ async function main() {
   await pool.query("CREATE EXTENSION IF NOT EXISTS pg_trgm");
 
   const db = drizzle(pool);
-  console.log("Running migrations...");
+  const { logger } = await import("../logger");
+  logger.info("Running migrations...");
   await migrate(db, { migrationsFolder: "./drizzle" });
-  console.log("Migrations complete.");
+  logger.info("Migrations complete.");
   await pool.end();
 }
 
-main().catch((err) => {
-  console.error("Migration failed:", err);
+main().catch(async (err) => {
+  const { logger } = await import("../logger");
+  logger.error({ err }, "Migration failed");
   process.exit(1);
 });

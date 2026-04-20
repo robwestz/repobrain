@@ -55,7 +55,8 @@ async function initTreeSitter(): Promise<boolean> {
     initSucceeded = true;
     return true;
   } catch (err) {
-    console.warn("[symbols] tree-sitter WASM init failed, using regex fallback:", err);
+    const { logger } = await import("@/src/lib/logger");
+    logger.warn({ err }, "symbols: tree-sitter WASM init failed, using regex fallback");
     initSucceeded = false;
     return false;
   }
@@ -125,7 +126,8 @@ export async function extractSymbols(
       try {
         return extractWithTreeSitter(content, language);
       } catch (err) {
-        console.warn(`[symbols] tree-sitter parse failed for ${filePath}, using regex:`, err);
+        const { logger } = await import("@/src/lib/logger");
+        logger.warn({ err, filePath }, "symbols: tree-sitter parse failed, using regex");
       }
     }
   }

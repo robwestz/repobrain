@@ -5,6 +5,6 @@ export default defineConfig({
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: {
-    url: process.env.DATABASE_URL || "postgresql://repobrain:repobrain@localhost:5432/repobrain",
+    url: process.env.DATABASE_URL!,
   },
 });

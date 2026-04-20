@@ -8,6 +8,9 @@ on:
 jobs:
   lint-and-build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -16,16 +19,12 @@ jobs:
           cache: npm
           cache-dependency-path: src/package-lock.json
       - name: Install dependencies
-        working-directory: src
         run: npm ci
       - name: Lint
-        working-directory: src
         run: npm run lint
       - name: Type check
-        working-directory: src
         run: npx tsc --noEmit
       - name: Build
-        working-directory: src
         run: npm run build
         env:
           # Minimal env for build (no real secrets needed)
