@@ -4,6 +4,7 @@ on:
     paths:
       - 'src/src/lib/db/schema*.ts'
       - 'src/drizzle/**'
+      - 'src/src/lib/db/migrate.ts'
 
 jobs:
   check-migrations:
